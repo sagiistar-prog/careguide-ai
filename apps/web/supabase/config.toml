@@ -1,0 +1,6 @@
+project_id = "careguide-ai"
+
+[db.seed]
+enabled = true
+sql_paths = ["./seed.sql"]
+

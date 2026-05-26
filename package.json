@@ -1,0 +1,41 @@
+{
+  "name": "careguide-ai",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm --workspace apps/web run dev",
+    "build": "npm --workspace apps/web run build",
+    "start": "npm --workspace apps/web run start",
+    "typecheck": "npm --workspace apps/web run typecheck",
+    "env:check": "npm --workspace apps/web run env:check",
+    "db:migrate": "npm --workspace apps/web run db:migrate",
+    "db:seed": "npm --workspace apps/web run db:seed",
+    "ingest:minimal": "npm --workspace apps/web run ingest:minimal",
+    "embed:chunks": "npm --workspace apps/web run embed:chunks",
+    "verify:kb": "npm --workspace apps/web run verify:kb",
+    "kb:summary": "npm --workspace apps/web run kb:summary",
+    "retrieval:test": "npm --workspace apps/web run retrieval:test",
+    "verify:retrieval": "npm --workspace apps/web run verify:retrieval",
+    "answer:test": "npm --workspace apps/web run answer:test",
+    "verify:answer": "npm --workspace apps/web run verify:answer",
+    "api:test": "npm --workspace apps/web run api:test",
+    "ui:smoke": "npm --workspace apps/web run ui:smoke",
+    "books:scan": "npm --workspace apps/web run books:scan",
+    "books:sample": "npm --workspace apps/web run books:sample",
+    "books:text:sample": "npm --workspace apps/web run books:text:sample",
+    "books:ocr:sample": "npm --workspace apps/web run books:ocr:sample",
+    "books:check-ocr": "npm --workspace apps/web run books:check-ocr",
+    "books:ingest": "npm --workspace apps/web run books:ingest",
+    "books:review-skipped": "npm --workspace apps/web run books:review-skipped",
+    "books:recovery-preflight": "npm --workspace apps/web run books:recovery-preflight",
+    "books:recover-skipped": "npm --workspace apps/web run books:recover-skipped",
+    "books:recover-216-docx": "npm --workspace apps/web run books:recover-216-docx",
+    "books:recover-family-zhongcheng-docx": "npm --workspace apps/web run books:recover-family-zhongcheng-docx",
+    "books:recover-supplements": "npm --workspace apps/web run books:recover-supplements",
+    "books:ingest-txt-replacements": "npm --workspace apps/web run books:ingest-txt-replacements",
+    "books:verify": "npm --workspace apps/web run books:verify"
+  }
+}
