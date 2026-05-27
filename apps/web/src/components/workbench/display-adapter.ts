@@ -80,6 +80,8 @@ const KNOWN_TCM_NAMES = [
   "抗病毒口服液",
   "感冒清热颗粒",
   "风寒感冒颗粒",
+  "荆防颗粒",
+  "荆防败毒散",
   "小青龙合剂",
   "通宣理肺丸",
   "止嗽宁嗽胶囊",
@@ -190,23 +192,33 @@ function escapeRegExp(value: string) {
 }
 
 function compactText(value: string | undefined) {
-  return (value ?? "").replace(/\s+/g, " ").trim();
+  return (value ?? "")
+    .replace(/\r\n?/g, "\n")
+    .replace(/[ \t\f\v]+/g, " ")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function cleanText(value: string | undefined) {
-  const withoutUnknown = compactText(value).replace(/当前知识库无法确认。?/g, "");
+  const withoutUnknown = compactText(value)
+    .replace(/当前知识库无法确认。?/g, "")
+    .replace(/\uFFFD/g, "");
   const cleaned = BOILERPLATE_PATTERNS.reduce(
     (current, pattern) => current.replace(pattern, ""),
     withoutUnknown,
   )
+    .replace(/^[\s】\]）)》」』]+/g, "")
     .replace(/[】]+/g, "")
-    .replace(/\s+/g, " ")
+    .replace(/[ \t\f\v]+/g, " ")
     .replace(/\s+([，。；：、])/g, "$1")
     .replace(/([（(])\s+/g, "$1")
     .replace(/\s+([）)])/g, "$1")
     .replace(/(\d)\s+(mg|g|ml|mL|片|粒|丸|袋|次|日|小时)/gi, "$1$2")
     .replace(/(\d)\s*；\s*(\d)/g, "$1.$2")
-    .replace(/\s+/g, " ")
+    .replace(/[ \t\f\v]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
 
   return translateMedicalTerms(cleaned);
@@ -265,26 +277,77 @@ function dedupeFields(fields: MedicationGroup["fields"]) {
   };
 }
 
-function safeExternalNote(value: string | undefined) {
-  const text = truncate(value ?? "", 160);
+function fieldClauseKeys(fields: MedicationGroup["fields"]) {
+  return new Set(
+    Object.values(fields)
+      .flatMap(splitClauses)
+      .map(normalizeClauseKey)
+      .filter(Boolean),
+  );
+}
 
-  if (!text || text === UNKNOWN) {
-    return "";
+function hasLikelyMojibake(value: string) {
+  if (value.includes("�")) {
+    return true;
   }
 
-  return text.startsWith("本地资料未列出；Google 检索参考显示")
-    ? text
-    : `本地资料未列出；Google 检索参考显示：${text}`;
+  const markers = value.match(
+    /涓|涔|褰|鐭|璇|搴|嗘|勬|鎴|鍖|妫|湴|厷|噺|瘑|楃|忚|堢/g,
+  );
+
+  return (markers?.length ?? 0) >= 3;
+}
+
+function isExternalNoteRelevant(value: string) {
+  return /适应症|适用于|用于|用法|用量|剂量|口服|禁忌|禁用|不宜|慎用|注意|不良反应|副作用|过敏|相互作用|儿童|孕|哺乳|肝|肾|药/.test(
+    value,
+  );
+}
+
+function looksLikeNonMedicalSearchNoise(value: string) {
+  return /广告|购买|价格|优惠|百科|词条|登录|注册|导航|免责声明|版权所有|论坛|新闻|图片|视频|店铺|购物|市场/.test(
+    value,
+  );
+}
+
+function safeExternalNotes(
+  value: string | undefined,
+  fields: MedicationGroup["fields"],
+) {
+  const text = truncate(value ?? "", 220);
+
+  if (!text || text === UNKNOWN) {
+    return [];
+  }
+
+  const withoutPrefix = text.replace(
+    /^本地资料未列出；Google 检索参考显示[:：]?/,
+    "",
+  );
+  const existingFieldKeys = fieldClauseKeys(fields);
+  const clauses = splitClauses(withoutPrefix)
+    .map((clause) => clause.replace(/^\d+[.、]\s*/, "").trim())
+    .filter(Boolean)
+    .filter((clause) => isExternalNoteRelevant(clause))
+    .filter((clause) => !looksLikeNonMedicalSearchNoise(clause))
+    .filter((clause) => !unrelatedTopicLeak(clause))
+    .filter((clause) => !hasLikelyMojibake(clause))
+    .filter((clause) => !existingFieldKeys.has(normalizeClauseKey(clause)))
+    .slice(0, 3);
+
+  return clauses.map(
+    (clause) => `本地资料未列出；Google 检索参考显示：${truncate(clause, 90)}`,
+  );
 }
 
 function unrelatedTopicLeak(value: string) {
-  return /伤口|咬伤|服毒|催吐|洗胃|导泻|中毒|静脉滴注|肌内注射|青霉素|头孢|地西泮|氯化钾|氯化钠/.test(
+  return /伤口|创口|外伤|蛇咬|咬伤|动物伤|服毒|催吐|洗胃|导泻|中毒|急救|破伤风|静脉滴注|静脉注射|肌内注射|注射液|青霉素|头孢|地西泮|氯化钾|氯化钠/.test(
     value,
   );
 }
 
 function hasMultiplePrescriptionBlocks(value: string) {
-  const matches = value.match(/处方\s*[一二三四五六七八九十0-9]+/g) ?? [];
+  const matches = value.match(/(?:处方|方剂|方)\s*[一二三四五六七八九十0-9]+/g) ?? [];
 
   return new Set(matches).size > 1;
 }
@@ -296,7 +359,7 @@ function hasTooManyMedicineMentions(value: string, currentName: string) {
     ...KNOWN_TCM_NAMES,
   ].filter((name) => value.includes(name) && !normalizedCurrent.includes(name));
 
-  return new Set(medicineMentions).size > 2;
+  return new Set(medicineMentions).size > 1;
 }
 
 function safeStructuredField(input: {
@@ -311,9 +374,11 @@ function safeStructuredField(input: {
   }
 
   if (
+    text.includes("Google 检索参考显示") ||
     hasMultiplePrescriptionBlocks(text) ||
     hasTooManyMedicineMentions(text, input.currentName) ||
-    unrelatedTopicLeak(text)
+    unrelatedTopicLeak(text) ||
+    hasLikelyMojibake(text)
   ) {
     return UNKNOWN;
   }
@@ -532,6 +597,14 @@ function extractNames(card: MedicationCardData, citations: Citation[], query: st
     !isInvalidMedicationName(structuredName) &&
     appearsInEvidence(structuredName, card, citations)
   ) {
+    if (structuredCategory === "western" && !isDrugLabelEvidence(citations)) {
+      return [];
+    }
+
+    if (structuredCategory === "tcm" && !isMedicalBookEvidence(citations)) {
+      return [];
+    }
+
     return [
       {
         name: structuredName,
@@ -544,8 +617,8 @@ function extractNames(card: MedicationCardData, citations: Citation[], query: st
   }
 
   const bundle = translateMedicalTerms(bundleFor(card, citations));
-  const western = westernNames(bundle);
-  const tcm = tcmNames(bundle);
+  const western = isDrugLabelEvidence(citations) ? westernNames(bundle) : [];
+  const tcm = isMedicalBookEvidence(citations) ? tcmNames(bundle) : [];
 
   if (wantsTcm(query) && tcm.length > 0) {
     return tcm.map((name) => ({ name, category: "tcm" as const }));
@@ -578,7 +651,8 @@ function extractNames(card: MedicationCardData, citations: Citation[], query: st
 
   if (
     citations.some((citation) => citation.source_type === "medical_book") &&
-    hasPrescriptionLikeContent(card)
+    hasPrescriptionLikeContent(card) &&
+    /处方|方剂|用药方案/.test(query)
   ) {
     return [{ name: "书中通用处方参考", category: "tcm" as const }];
   }
@@ -649,9 +723,7 @@ function fieldFor(card: MedicationCardData, citations: Citation[]) {
   return "cautions" as const;
 }
 
-function fieldText(card: MedicationCardData, citations: Citation[], name: string) {
-  const text = sourceTextFor(card);
-  const fallbackField = fieldFor(card, citations);
+function fieldText(card: MedicationCardData, name: string) {
   const structured = card.medication_fields;
   const structuredField = (value: string | undefined) => {
     const cleaned = safeStructuredField({
@@ -661,55 +733,14 @@ function fieldText(card: MedicationCardData, citations: Citation[], name: string
 
     return cleaned && cleaned !== UNKNOWN ? cleaned : "";
   };
-  const allowFallbackExtraction = !structured;
   const fields = {
-    indication:
-      structuredField(structured?.indication) ||
-      (allowFallbackExtraction
-        ? extractLabeledField(text, ["适应症", "证型", "适用范围", "适用于", "主治"]) ||
-          extractSentences(text, ["适用于", "适应症", "用于", "主治", "治疗", "症见", "证见", "主要治疗", "缓解"])
-        : "") ||
-      UNKNOWN,
-    dosage:
-      structuredField(structured?.dosage) ||
-      (allowFallbackExtraction
-        ? extractLabeledField(text, ["用量用法", "用法用量", "用法", "用量"]) ||
-          extractSentences(text, ["用法", "用量", "口服", "每次", "每日", "一日", "一次", "mg", "ml", "片", "粒", "丸", "袋", "疗程"])
-        : "") ||
-      UNKNOWN,
-    decoction:
-      structuredField(structured?.decoction) ||
-      (allowFallbackExtraction
-        ? extractLabeledField(text, ["煎法", "做法", "服法"]) ||
-          extractSentences(text, ["煎服", "水煎", "冲服", "外用", "煎煮", "开水冲服", "温水"])
-        : "") ||
-      UNKNOWN,
-    contraindications:
-      structuredField(structured?.contraindications) ||
-      (allowFallbackExtraction
-        ? extractLabeledField(text, ["禁忌", "不宜"]) ||
-          extractSentences(text, ["禁忌", "不宜", "禁用", "忌", "过敏"])
-        : "") ||
-      UNKNOWN,
-    cautions:
-      structuredField(structured?.cautions) ||
-      (allowFallbackExtraction
-        ? extractLabeledField(text, ["注意事项", "慎用", "注意"]) ||
-          extractSentences(text, ["注意", "慎用", "观察", "若", "如果", "避免", "不确定"])
-        : "") ||
-      UNKNOWN,
-    adverse:
-      structuredField(structured?.adverse_reactions) ||
-      (allowFallbackExtraction
-        ? extractLabeledField(text, ["不良反应", "副作用"]) ||
-          extractSentences(text, ["不良反应", "副作用", "恶心", "呕吐", "腹泻", "皮疹", "头痛", "眩晕"])
-        : "") ||
-      UNKNOWN,
+    indication: structuredField(structured?.indication) || UNKNOWN,
+    dosage: structuredField(structured?.dosage) || UNKNOWN,
+    decoction: structuredField(structured?.decoction) || UNKNOWN,
+    contraindications: structuredField(structured?.contraindications) || UNKNOWN,
+    cautions: structuredField(structured?.cautions) || UNKNOWN,
+    adverse: structuredField(structured?.adverse_reactions) || UNKNOWN,
   };
-
-  if (allowFallbackExtraction && fields[fallbackField] === UNKNOWN && text) {
-    fields[fallbackField] = truncate(text);
-  }
 
   return dedupeFields(fields);
 }
@@ -768,8 +799,25 @@ function addMedicationGroup(
   },
 ) {
   const name = normalizeName(input.name);
+  const structuredCategory = input.card.medication_fields?.medicine_category;
 
   if (isInvalidMedicationName(name)) {
+    return;
+  }
+
+  if (
+    input.category === "western" &&
+    !isDrugLabelEvidence(input.citations) &&
+    structuredCategory !== "western"
+  ) {
+    return;
+  }
+
+  if (
+    input.category === "tcm" &&
+    !isMedicalBookEvidence(input.citations) &&
+    structuredCategory !== "tcm"
+  ) {
     return;
   }
 
@@ -792,7 +840,7 @@ function addMedicationGroup(
       externalNotes: [],
       confidence: input.card.confidence,
     } satisfies MedicationGroup);
-  const fields = fieldText(input.card, input.citations, group.name);
+  const fields = fieldText(input.card, group.name);
 
   group.fields.indication = mergeField(group.fields.indication, fields.indication);
   group.fields.dosage = mergeField(group.fields.dosage, fields.dosage);
@@ -807,10 +855,15 @@ function addMedicationGroup(
     group.fields.decoction = mergeField(group.fields.decoction, fields.decoction);
   }
 
-  const externalNote = safeExternalNote(input.card.medication_fields?.external_search_note);
+  const externalNotes = safeExternalNotes(
+    input.card.medication_fields?.external_search_note,
+    group.fields,
+  );
 
-  if (externalNote && !group.externalNotes.includes(externalNote)) {
-    group.externalNotes = [...group.externalNotes, externalNote].slice(0, 2);
+  for (const externalNote of externalNotes) {
+    if (!group.externalNotes.includes(externalNote)) {
+      group.externalNotes = [...group.externalNotes, externalNote].slice(0, 3);
+    }
   }
 
   group.sourceRefs = uniqueSourceRefs([...group.sourceRefs, ...sourceRefs(input.card)]);

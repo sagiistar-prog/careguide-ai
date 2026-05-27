@@ -20,6 +20,8 @@ export const COMMON_DISEASE_TERMS = [
   "头痛",
   "头疼",
   "疼痛",
+  "痛经",
+  "经痛",
   "眩晕",
   "失眠",
   "心悸",
@@ -120,6 +122,7 @@ export const KNOWN_MEDICINE_CANDIDATE_TERMS = [
   "麻仁丸",
   "布洛芬",
   "对乙酰氨基酚",
+  "荆防颗粒",
 ] as const;
 
 const EXPLICIT_ENGLISH_DRUGS = [
@@ -144,6 +147,8 @@ const BOOK_QUESTION_PATTERNS = [
   "吃点什么",
   "用什么药",
   "有哪些药",
+  "哪些药",
+  "可以吃哪些药",
 ] as const;
 
 const SYMPTOM_EXPANSIONS = [
@@ -233,6 +238,25 @@ const SYMPTOM_EXPANSIONS = [
       "headache",
     ],
   },
+  {
+    triggers: ["痛经", "经痛"],
+    terms: [
+      "痛经",
+      "经痛",
+      "疼痛",
+      "止痛",
+      "血瘀",
+      "寒凝",
+      "气滞",
+      "中成药",
+      "处方",
+      "用法",
+      "用量",
+      "注意",
+      "ibuprofen",
+      "pain",
+    ],
+  },
 ] as const;
 
 const OFFICIAL_REFERENCE_EXPANSIONS = [
@@ -248,7 +272,7 @@ const OFFICIAL_REFERENCE_EXPANSIONS = [
     ],
   },
   {
-    triggers: ["头痛", "头疼", "疼痛", "止痛"],
+    triggers: ["头痛", "头疼", "疼痛", "止痛", "痛经", "经痛"],
     terms: [
       "pain",
       "headache",

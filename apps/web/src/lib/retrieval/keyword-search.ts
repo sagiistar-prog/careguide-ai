@@ -99,6 +99,7 @@ function buildMedicineCandidatePatterns(query: NormalizedQuery) {
     symptomSpecific.push(
       "感冒清热颗粒",
       "风寒感冒颗粒",
+      "荆防颗粒",
       "小青龙合剂",
       "通宣理肺丸",
       "止嗽宁嗽胶囊",
@@ -108,6 +109,10 @@ function buildMedicineCandidatePatterns(query: NormalizedQuery) {
       "布洛芬",
       "对乙酰氨基酚",
     );
+  }
+
+  if (query.detected_symptoms.some((term) => ["头痛", "头疼", "疼痛", "止痛", "痛经", "经痛"].includes(term))) {
+    symptomSpecific.push("布洛芬", "对乙酰氨基酚", "元胡止痛片", "少腹逐瘀颗粒");
   }
 
   if (query.detected_symptoms.some((term) => ["胃痛", "腹痛", "肚子痛"].includes(term))) {

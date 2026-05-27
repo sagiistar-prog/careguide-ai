@@ -1,5 +1,7 @@
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { buildMedicationDisplay } from "../../components/workbench/display-adapter";
+import type { QueryResponse } from "../../components/workbench/types";
 
 const ROOT = process.cwd();
 const REQUIRED_FILES = [
@@ -102,6 +104,122 @@ assert(uiText.includes("consult-enter"), "Consult enter animation hook is missin
 assert(uiText.includes("progressbar"), "Consult loading progressbar is missing.");
 assert(uiText.includes("查询进度"), "Consult loading progress label is missing.");
 assert(uiText.includes("外部检索补充"), "Card-level external search supplement is missing.");
+
+const pollutedResult: QueryResponse = {
+  request_id: "ui-smoke",
+  answer_status: "answered_with_evidence",
+  query: "男 25 感冒 中成药",
+  detected_entities: { drugs: [], scenarios: [], population: [] },
+  plain_language_summary: [],
+  evidence_cards: [
+    {
+      card_type: "usage",
+      title: "布洛芬",
+      plain_language_text: "说明书提示",
+      original_excerpt: "Ibuprofen label",
+      citation_ids: ["drug-chunk"],
+      source_ids: ["openfda_label"],
+      chunk_ids: ["drug-chunk"],
+      confidence: "medium",
+      applicability: "",
+      not_applicable_when: "",
+      medication_fields: {
+        medicine_name: "布洛芬",
+        medicine_category: "western",
+        indication: "感冒清热颗粒；处方一；处方二；洗胃处理",
+        dosage: "0；2g",
+        contraindications: "】本地资料未列出",
+        cautions: "该卡片整理自本地资料",
+      },
+    },
+    {
+      card_type: "usage",
+      title: "该卡片",
+      plain_language_text: "该卡片整理自本地资料",
+      original_excerpt: "该卡片整理自本地资料",
+      citation_ids: ["book-chunk"],
+      source_ids: ["book-source"],
+      chunk_ids: ["book-chunk"],
+      confidence: "medium",
+      applicability: "",
+      not_applicable_when: "",
+      medication_fields: {
+        medicine_name: "该卡片",
+        medicine_category: "tcm",
+      },
+    },
+    {
+      card_type: "usage",
+      title: "感冒清热颗粒",
+      plain_language_text: "书中列出感冒清热颗粒。",
+      original_excerpt: "感冒清热颗粒",
+      citation_ids: ["book-chunk"],
+      source_ids: ["book-source"],
+      chunk_ids: ["book-chunk"],
+      confidence: "medium",
+      applicability: "",
+      not_applicable_when: "",
+      medication_fields: {
+        medicine_name: "感冒清热颗粒",
+        medicine_category: "tcm",
+        indication: "风寒感冒；伤口处理",
+        cautions: "】服毒后催吐、洗胃",
+        external_search_note:
+          "本地资料未列出；Google 检索参考显示：常见资料会把适应症、禁忌、注意事项分栏描述；广告购买信息",
+      },
+    },
+  ],
+  safety_notices: [],
+  questions_for_doctor_or_pharmacist: [],
+  limitations: [],
+  citations: [
+    {
+      citation_id: "drug-chunk",
+      source_id: "openfda_label",
+      chunk_id: "drug-chunk",
+      source_document_id: "drug-doc",
+      document_title: "Ibuprofen Label",
+      source_organization: "FDA",
+      source_type: "drug_label",
+      published_at: null,
+      source_updated_at: "2026-01-01",
+      section_name: "Indications and Usage",
+    },
+    {
+      citation_id: "book-chunk",
+      source_id: "book-source",
+      chunk_id: "book-chunk",
+      source_document_id: "book-doc",
+      document_title: "家庭常见病中成药使用指南",
+      source_organization: "本地授权书籍",
+      source_type: "medical_book",
+      book_title: "家庭常见病中成药使用指南",
+      page_start: 10,
+      page_end: 10,
+      location: "第10页",
+      published_at: null,
+      source_updated_at: "2026-01-01",
+      section_name: "感冒用药表",
+    },
+  ],
+  external_search_notes: [],
+  rejected_claims_count: 0,
+  citation_coverage: 100,
+  created_at: new Date().toISOString(),
+};
+const pollutedDisplay = buildMedicationDisplay(pollutedResult);
+const visibleMedicationText = [
+  ...pollutedDisplay.western,
+  ...pollutedDisplay.tcm,
+]
+  .map((group) =>
+    [group.name, ...Object.values(group.fields), ...group.externalNotes].join("\n"),
+  )
+  .join("\n");
+
+assert(!visibleMedicationText.includes("该卡片"), "Fake medicine name leaked.");
+assert(!/蛇咬伤|咬伤|伤口|服毒|催吐|洗胃|source_id|chunk_id|】/.test(visibleMedicationText), "Polluted medication text leaked.");
+assert(visibleMedicationText.includes("0.2g"), "Dose punctuation normalization failed.");
 
 console.log(
   JSON.stringify(

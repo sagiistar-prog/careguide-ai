@@ -42,7 +42,7 @@ export function MedicationDisplayCard({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-sm font-semibold text-care-cocoa">
-            {group.category === "tcm" ? "中成药参考" : "西药资料"}
+            {group.category === "tcm" ? "中成药" : "西药"}
           </p>
           <h4 className="mt-1 text-2xl font-semibold leading-9 text-care-ink">
             {group.name}
@@ -70,7 +70,7 @@ export function MedicationDisplayCard({
             <dt className="text-sm font-semibold text-care-cocoa">
               {FIELD_LABELS[field]}
             </dt>
-            <dd className="mt-1 text-sm leading-7 text-care-ink">
+            <dd className="mt-1 whitespace-pre-line text-sm leading-7 text-care-ink">
               {group.fields[field]}
             </dd>
           </div>
@@ -80,13 +80,13 @@ export function MedicationDisplayCard({
       {group.externalNotes.length > 0 ? (
         <div className="mt-4 rounded-2xl border border-care-line bg-care-soft px-4 py-3">
           <p className="text-sm font-semibold text-care-cocoa">外部检索补充</p>
-          <div className="mt-2 space-y-2">
+          <ol className="mt-2 list-decimal space-y-2 pl-5">
             {group.externalNotes.map((note) => (
-              <p key={note} className="text-sm leading-7 text-care-ink">
+              <li key={note} className="text-sm leading-7 text-care-ink">
                 {note}
-              </p>
+              </li>
             ))}
-          </div>
+          </ol>
         </div>
       ) : null}
     </article>

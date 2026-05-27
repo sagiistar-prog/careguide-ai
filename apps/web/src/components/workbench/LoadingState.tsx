@@ -42,10 +42,11 @@ export function LoadingState({ progress, stage }: LoadingStateProps) {
           />
         </div>
         <div className="mt-3 flex items-center justify-between text-xs font-medium text-care-muted">
-          <span>接收问题</span>
-          <span>检索资料</span>
-          <span>核对出处</span>
-          <span>整理卡片</span>
+          <span>理解问题</span>
+          <span>检索本地资料</span>
+          <span>核对药品字段</span>
+          <span>补充外部摘要</span>
+          <span>完成</span>
         </div>
       </div>
 

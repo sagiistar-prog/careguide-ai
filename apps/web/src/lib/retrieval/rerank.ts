@@ -89,6 +89,7 @@ function looksLikeMedicationCandidate(candidate: HybridCandidate) {
     ...PRESCRIPTION_STRUCTURE_TERMS,
     "感冒清热颗粒",
     "风寒感冒颗粒",
+    "荆防颗粒",
     "小青龙合剂",
     "藿香正气",
     "布洛芬",

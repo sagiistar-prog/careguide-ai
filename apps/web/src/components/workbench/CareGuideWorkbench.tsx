@@ -41,22 +41,26 @@ function wait(ms: number) {
 
 function loadingStage(progress: number) {
   if (progress >= 96) {
-    return "已经整理好，正在打开结果。";
+    return "完成，正在打开结果。";
   }
 
-  if (progress >= 78) {
+  if (progress >= 86) {
     return "正在把可查看的信息整理成用药卡片。";
   }
 
-  if (progress >= 52) {
-    return "正在核对资料来源和原文出处。";
+  if (progress >= 68) {
+    return "如有可用信息，正在补充外部摘要；外部摘要不作为权威来源。";
   }
 
-  if (progress >= 24) {
+  if (progress >= 45) {
+    return "正在核对药名、字段和原文出处是否对应。";
+  }
+
+  if (progress >= 18) {
     return "正在检索本地资料库里的相关内容。";
   }
 
-  return "正在接收你的问题。";
+  return "正在理解你的问题。";
 }
 
 export function CareGuideWorkbench({
@@ -161,6 +165,7 @@ export function CareGuideWorkbench({
     setLoadingProgress(8);
     setLoading(true);
     setError(null);
+    setResult(null);
 
     try {
       const data = await fetchJson<QueryResponse>("/api/query", {

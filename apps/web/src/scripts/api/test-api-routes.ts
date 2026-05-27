@@ -4,6 +4,8 @@ import { GET as getCoverage } from "../../app/api/kb/coverage/route";
 import { POST as postQuery } from "../../app/api/query/route";
 import { GET as getScenarios } from "../../app/api/scenarios/route";
 import { GET as getSource } from "../../app/api/sources/[sourceId]/route";
+import { buildMedicationDisplay } from "../../components/workbench/display-adapter";
+import type { QueryResponse } from "../../components/workbench/types";
 
 loadEnvConfig(process.cwd());
 
@@ -55,6 +57,25 @@ function citationCoverage(value: Record<string, unknown>) {
     : 0;
 }
 
+function assertCleanVisibleCards(result: QueryResponse) {
+  const display = buildMedicationDisplay(result);
+  const pollutionPattern =
+    /蛇咬伤|咬伤|伤口|创口|服毒|催吐|洗胃|导泻|中毒|静脉滴注|肌内注射|该卡片|source_id|chunk_id|】/;
+
+  for (const group of [...display.western, ...display.tcm]) {
+    const visibleText = [
+      group.name,
+      ...Object.values(group.fields),
+      ...group.externalNotes,
+    ].join("\n");
+
+    assert(
+      !pollutionPattern.test(visibleText),
+      `Main medication card contains polluted visible text: ${group.name}`,
+    );
+  }
+}
+
 async function main() {
   const ordinary = await postQueryJson({
     query: "metformin 有哪些不良反应？",
@@ -69,6 +90,28 @@ async function main() {
     citationCoverage(ordinary.json) === 100,
     "Ordinary query citation coverage is not 100.",
   );
+
+  const coldTcm = await postQueryJson({
+    query: "男 25 感冒 中成药",
+    locale: "zh-CN",
+  });
+  assert(coldTcm.status === 200, "Cold TCM query did not return 200.");
+  assert(
+    citationCoverage(coldTcm.json) === 100,
+    "Cold TCM query citation coverage is not 100.",
+  );
+  assertCleanVisibleCards(coldTcm.json as QueryResponse);
+
+  const headache = await postQueryJson({
+    query: "头疼吃什么药",
+    locale: "zh-CN",
+  });
+  assert(headache.status === 200, "Headache query did not return 200.");
+  assert(
+    citationCoverage(headache.json) === 100,
+    "Headache query citation coverage is not 100.",
+  );
+  assertCleanVisibleCards(headache.json as QueryResponse);
 
   const highRisk = await postQueryJson({
     query: "我现在胸痛还呼吸困难，可以吃布洛芬吗？",
@@ -108,7 +151,14 @@ async function main() {
   });
   assert(tooLong.status === 400, "Overlong query did not return 400.");
 
-  for (const payload of [ordinary.json, highRisk.json, unknown.json, empty.json]) {
+  for (const payload of [
+    ordinary.json,
+    coldTcm.json,
+    headache.json,
+    highRisk.json,
+    unknown.json,
+    empty.json,
+  ]) {
     assert(
       !containsSensitiveMarker(payload),
       "API response contains a sensitive marker.",
@@ -171,9 +221,13 @@ async function main() {
       {
         status: "passed",
         ordinary_status: ordinary.json.answer_status,
+        cold_tcm_status: coldTcm.json.answer_status,
+        headache_status: headache.json.answer_status,
         high_risk_status: highRisk.json.answer_status,
         unknown_status: unknown.json.answer_status,
         ordinary_citation_coverage: ordinary.json.citation_coverage,
+        cold_tcm_citation_coverage: coldTcm.json.citation_coverage,
+        headache_citation_coverage: headache.json.citation_coverage,
         high_risk_citation_coverage: highRisk.json.citation_coverage,
         unknown_citation_coverage: unknown.json.citation_coverage,
         empty_query_status: empty.status,

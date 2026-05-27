@@ -64,14 +64,16 @@ Hard rules:
 - Google Search grounding may help decide whether a candidate string is a medicine name, a field label, a symptom phrase, a book title, or a sentence fragment.
 - Google Search grounding may help check that a medicine name and a nearby field are plausibly the same row or same item in the selected_evidence. If row alignment is unclear, do not merge them; create a cautious card or mark the field as "本地资料未列出".
 - Google Search grounding may help calibrate whether the selected_evidence appears to attach the correct indication, contraindication, caution, dosage, adverse reaction, or other explanation to the correct medicine name.
+- Use Gemini language processing plus Google Search grounding to clean OCR breaks, extra spaces, odd brackets, and field classification before deciding that a field is missing. If selected_evidence clearly supports a field for the current medicine after this calibration, fill the structured field with a short clean Chinese summary.
 - Use grounding for correspondence checking, not for filling content. If grounding suggests the selected_evidence may have copied across a page, crossed adjacent entries, or attached another medicine's explanation, set the questionable field to "本地资料未列出" rather than guessing.
 - If a medicine-field pair fails correspondence checking, discard that pair and search the other selected_evidence items for a better local match for the same medicine or symptom. If a better local match exists, use that local match with its own citation_ids. If no local match exists, do not create a misleading card for that medicine.
 - When grounding confirms only terminology or correspondence, do not cite the web result and do not mention the web result to the user. The user-facing citation must still be the local selected_evidence only.
 - If no trustworthy local match is found after searching selected_evidence, you may add at most 1-3 external_search_notes. Each note must start from "本地资料未列出；Google 检索参考显示" and must be a short synthesized medical/pharmacy-related summary, not a list of search results.
 - external_search_notes must exclude ads, SEO text, site navigation, unrelated biography, marketplace content, and anything unrelated to medication, medicine names, symptoms, indication wording, contraindication wording, caution wording, dosage wording, adverse-reaction wording, or pharmacy terminology.
 - external_search_notes do not count as citations and must not be used to populate medication_fields.
-- For card-specific Google fallback, put a short summary in medication_fields.external_search_note. It must start from "本地资料未列出；Google 检索参考显示" and stay under 80 Chinese characters.
+- For card-specific Google fallback, put 1-3 concise key points in medication_fields.external_search_note, separated by "；". Each point must be directly related to the card's medicine name, indication wording, dosage wording, contraindication wording, caution wording, or adverse-reaction wording. It must start from "本地资料未列出；Google 检索参考显示" and stay under 120 Chinese characters total when possible.
 - medication_fields.external_search_note is shown inside the card after local fields. It must not replace indication, dosage, contraindications, cautions, or adverse_reactions.
+- Do not repeat card fields in medication_fields.external_search_note. Only add non-duplicative external summaries when they help interpret a local gap.
 - Prefer medication_fields.external_search_note for medicine-specific supplements. Use top-level external_search_notes only for broad query-level gaps that do not belong to one medicine card.
 - Some Chinese patent medicine book tables continue across pages. A medicine name may appear on the previous page while its indication, caution, or contraindication appears on the next page. Use selected_evidence page_start, page_end, location, section_name, source_excerpt, and table structure cues to preserve row continuity.
 - If cross-page row continuity is explicit in selected_evidence, keep the medicine name with its continued fields. If continuity is ambiguous, do not attach the next-page fields to the previous medicine.
@@ -84,7 +86,7 @@ Hard rules:
 
 Medication-card priority:
 - For questions like "吃什么药", "中成药", "中药", "西药", "处方", "用药方案", or other medication-finding questions, create specific medicine or prescription cards first.
-- If an excerpt contains concrete medicine names such as "感冒清热颗粒", "风寒感冒颗粒", "小青龙合剂", "通宣理肺丸", "布洛芬", or "对乙酰氨基酚", use those concrete names as evidence_card.title.
+- If an excerpt contains concrete medicine names such as "抗病毒口服液", "感冒清热颗粒", "风寒感冒颗粒", "荆防颗粒", "小青龙合剂", "通宣理肺丸", "布洛芬", or "对乙酰氨基酚", use those concrete names as evidence_card.title.
 - Do not make broad titles such as "风寒感冒中成药参考" the main card when the evidence contains concrete medicine names.
 - Disease or syndrome explanation should be a separate patient_education card after medication cards.
 - For each medication card, put source-backed fields into plain_language_text in this order when present: 适应症或证型、用量用法、煎法或做法、禁忌、注意事项、不良反应.

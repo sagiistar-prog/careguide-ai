@@ -1,6 +1,9 @@
 import { generateStructuredAnswer } from "../../lib/answer/generate-structured-answer";
 import { persistAnswerAudit } from "../../lib/answer/answer-persister";
+import { safeAnswerResponse } from "../../lib/api/safe-response";
 import { hybridSearch } from "../../lib/retrieval/hybrid-search";
+import { buildMedicationDisplay } from "../../components/workbench/display-adapter";
+import type { QueryResponse } from "../../components/workbench/types";
 import { closeAdminClient, createAdminClient } from "../ingest/lib/db";
 import { getScriptEnv } from "../ingest/lib/script-env";
 
@@ -14,14 +17,43 @@ const TEST_QUERIES = [
   "糖尿病患者看 metformin 说明书需要注意什么？",
   "我现在胸痛还呼吸困难，可以吃布洛芬吗？",
   "男 25 感冒 中成药",
+  "25岁男 感冒吃什么中成药",
   "风寒感冒吃点什么中药？",
+  "感冒可以吃哪些药",
   "感冒可以吃哪些中成药？",
+  "头痛怎么办",
+  "头疼吃什么药",
   "腹痛相关处方有哪些？",
+  "痛经怎么办",
+  "女 30 发烧 西药",
 ] as const;
+
+const POLLUTION_PATTERN =
+  /蛇咬伤|咬伤|伤口|创口|服毒|催吐|洗胃|导泻|中毒|静脉滴注|肌内注射|该卡片|source_id|chunk_id|】/;
 
 function assert(condition: boolean, message: string) {
   if (!condition) {
     throw new Error(message);
+  }
+}
+
+function assertCleanMedicationDisplay(result: QueryResponse) {
+  const display = buildMedicationDisplay(result);
+  const groups = [...display.western, ...display.tcm];
+
+  for (const group of groups) {
+    const visibleText = [
+      group.name,
+      ...Object.values(group.fields),
+      ...group.externalNotes,
+    ].join("\n");
+
+    assert(
+      !POLLUTION_PATTERN.test(visibleText),
+      `药品卡可见内容出现污染文本：${result.query} / ${group.name}`,
+    );
+
+    assert(group.name !== "该卡片", `出现假药名“该卡片”：${result.query}`);
   }
 }
 
@@ -58,6 +90,13 @@ async function main() {
       assert(
         validation.citation_coverage === 1,
         `Citation coverage below 100% for query: ${query}`,
+      );
+      assertCleanMedicationDisplay(
+        safeAnswerResponse({
+          requestId: "script",
+          evidencePackage,
+          validation,
+        }) as QueryResponse,
       );
 
       summaries.push({

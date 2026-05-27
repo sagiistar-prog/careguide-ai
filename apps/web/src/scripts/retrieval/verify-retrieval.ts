@@ -97,11 +97,16 @@ async function main() {
       "男 25 感冒 中成药",
       "25岁男 感冒吃什么中成药",
       "风寒感冒吃点什么中药",
+      "感冒可以吃哪些药",
       "感冒可以吃哪些中成药",
+      "头痛怎么办",
+      "头疼吃什么药",
       "咳嗽可以吃什么药",
       "胃痛吃什么药",
       "腹痛相关处方有哪些",
+      "痛经怎么办",
       "中暑怎么处理",
+      "女 30 发烧 西药",
     ];
     const summaries = [];
 
@@ -119,16 +124,20 @@ async function main() {
         (evidence) => evidence.source_type === "medical_book",
       );
 
-      assert(
-        medicationPackage.normalized_query.book_intent,
-        `没有识别出 book_intent：${query}`,
-      );
+      if (!query.includes("西药")) {
+        assert(
+          medicationPackage.normalized_query.book_intent,
+          `没有识别出 book_intent：${query}`,
+        );
+      }
       assert(
         medicationPackage.normalized_query.question_type === "find_medicine" ||
           medicationPackage.normalized_query.question_type === "prescription",
         `没有识别为找药或处方意图：${query}`,
       );
-      assert(bookEvidence.length > 0, `中文找药问题没有命中 medical_book：${query}`);
+      if (!query.includes("西药")) {
+        assert(bookEvidence.length > 0, `中文找药问题没有命中 medical_book：${query}`);
+      }
 
       for (const evidence of bookEvidence) {
         assert(Boolean(evidence.source_id), "medical_book 证据缺少 source_id。");

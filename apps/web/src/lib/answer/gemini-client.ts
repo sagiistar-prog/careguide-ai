@@ -52,7 +52,13 @@ export async function generateGeminiJson(input: {
       contents: [
         {
           role: "user",
-          parts: [{ text: input.prompt }],
+          parts: [
+            {
+              text: useGrounding
+                ? input.prompt
+                : `${input.prompt}\n\nGoogle Search grounding is unavailable for this attempt. Do not create external_search_notes, and set every medication_fields.external_search_note to an empty string. Continue using only the provided evidence_package.`,
+            },
+          ],
         },
       ],
       generationConfig: {

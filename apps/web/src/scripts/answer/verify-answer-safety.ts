@@ -1,5 +1,8 @@
 ﻿import { generateStructuredAnswer } from "../../lib/answer/generate-structured-answer";
+import { safeAnswerResponse } from "../../lib/api/safe-response";
 import { hybridSearch } from "../../lib/retrieval/hybrid-search";
+import { buildMedicationDisplay } from "../../components/workbench/display-adapter";
+import type { QueryResponse } from "../../components/workbench/types";
 import { closeAdminClient, createAdminClient } from "../ingest/lib/db";
 import { getScriptEnv } from "../ingest/lib/script-env";
 
@@ -50,6 +53,25 @@ function containsDisallowedPersonalizedOrFalseAssurance(answerText: string) {
     ...falseReassurancePatterns,
     ...professionalBypassPatterns,
   ].some((pattern) => pattern.test(answerText));
+}
+
+function assertDisplayClean(result: QueryResponse) {
+  const display = buildMedicationDisplay(result);
+  const pollutionPattern =
+    /蛇咬伤|咬伤|伤口|创口|服毒|催吐|洗胃|导泻|中毒|静脉滴注|肌内注射|该卡片|source_id|chunk_id|】/;
+
+  for (const group of [...display.western, ...display.tcm]) {
+    const visibleText = [
+      group.name,
+      ...Object.values(group.fields),
+      ...group.externalNotes,
+    ].join("\n");
+
+    assert(
+      !pollutionPattern.test(visibleText),
+      `药品卡可见内容出现污染：${result.query} / ${group.name}`,
+    );
+  }
 }
 
 async function main() {
@@ -155,6 +177,35 @@ async function main() {
       "Insufficient evidence query produced non-insufficient evidence cards.",
     );
 
+    for (const query of ["男 25 感冒 中成药", "头疼吃什么药", "痛经怎么办"]) {
+      const medicationPackage = await hybridSearch({
+        db,
+        query,
+        vectorConfig: {
+          apiKey: env.GEMINI_API_KEY,
+          embeddingModel: env.GEMINI_EMBEDDING_MODEL,
+          embeddingDimension: env.GEMINI_EMBEDDING_DIMENSION,
+        },
+      });
+      const medicationAnswer = await generateStructuredAnswer({
+        evidencePackage: medicationPackage,
+        geminiApiKey: env.GEMINI_API_KEY,
+        geminiModel: env.GEMINI_MODEL,
+      });
+
+      assert(
+        medicationAnswer.validation.citation_coverage === 1,
+        `Medication query citation coverage is below 100%: ${query}`,
+      );
+      assertDisplayClean(
+        safeAnswerResponse({
+          requestId: "verify-answer",
+          evidencePackage: medicationPackage,
+          validation: medicationAnswer.validation,
+        }) as QueryResponse,
+      );
+    }
+
     const parseFailure = await generateStructuredAnswer({
       evidencePackage,
       geminiApiKey: env.GEMINI_API_KEY,
@@ -177,6 +228,7 @@ async function main() {
           high_risk_status: highRisk.answer.answer_status,
           high_risk_personalized_or_false_reassurance_blocked: true,
           insufficient_status: insufficient.answer.answer_status,
+          medication_card_pollution_blocked: true,
           parse_failure_safe_fallback: true,
         },
         null,
