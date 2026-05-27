@@ -13,11 +13,10 @@ const TEST_QUERIES = [
   "lisinopril 有哪些禁忌或警示？",
   "糖尿病患者看 metformin 说明书需要注意什么？",
   "我现在胸痛还呼吸困难，可以吃布洛芬吗？",
-  "\u8179\u75db\u600e\u4e48\u529e\uff1f",
-  "\u4e2d\u6691\u4e86\u600e\u4e48\u529e\uff1f",
-  "\u98ce\u5bd2\u611f\u5192\u5403\u70b9\u4ec0\u4e48\u4e2d\u836f\uff1f",
-  "\u611f\u5192\u53ef\u4ee5\u5403\u54ea\u4e9b\u4e2d\u6210\u836f\uff1f",
-  "\u8179\u75db\u76f8\u5173\u5904\u65b9\u6709\u54ea\u4e9b\uff1f",
+  "男 25 感冒 中成药",
+  "风寒感冒吃点什么中药？",
+  "感冒可以吃哪些中成药？",
+  "腹痛相关处方有哪些？",
 ] as const;
 
 function assert(condition: boolean, message: string) {

@@ -1,25 +1,19 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { AnswerStatusBanner } from "./AnswerStatusBanner";
-import { DetectedContext } from "./DetectedContext";
-import { EmptyState } from "./EmptyState";
-import { ErrorState } from "./ErrorState";
-import { KbCoverageBar } from "./KbCoverageBar";
-import { LoadingState } from "./LoadingState";
-import { MedicationCard } from "./MedicationCard";
-import { PharmacistQuestions } from "./PharmacistQuestions";
-import { PlainLanguageSummary } from "./PlainLanguageSummary";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  buildMedicationDisplay,
+  type SourceRef,
+} from "./display-adapter";
+import { KnowledgeSection } from "./KnowledgeSection";
+import { MedicationSection } from "./MedicationSection";
 import { QuestionComposer } from "./QuestionComposer";
-import { SafetyNoticeList } from "./SafetyNoticeList";
-import { ScenarioGrid } from "./ScenarioGrid";
 import { SourceDrawer } from "./SourceDrawer";
-import { SourceList } from "./SourceList";
-import type { KbCoverage, QueryResponse, Scenario, SourceDetail } from "./types";
+import type { KbCoverage, QueryResponse, SourceDetail } from "./types";
+import { statusLabel } from "./ui-copy";
 
-type DrawerTarget = {
-  chunkId: string;
-  sourceId: string;
+type CareGuideWorkbenchProps = {
+  initialQuestion?: string;
 };
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -38,56 +32,65 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-export function CareGuideWorkbench() {
-  const [scenarios, setScenarios] = useState<Scenario[]>([]);
+export function CareGuideWorkbench({
+  initialQuestion = "",
+}: CareGuideWorkbenchProps) {
+  const hasInitialQuestion = initialQuestion.trim().length >= 2;
+  const [question, setQuestion] = useState(initialQuestion);
   const [coverage, setCoverage] = useState<KbCoverage | null>(null);
-  const [selectedScenarioKey, setSelectedScenarioKey] = useState<string | null>(null);
-  const [question, setQuestion] = useState("");
   const [result, setResult] = useState<QueryResponse | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(hasInitialQuestion);
   const [error, setError] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [sourceDetail, setSourceDetail] = useState<SourceDetail | null>(null);
+  const [sourceDetails, setSourceDetails] = useState<SourceDetail[] | null>(null);
   const [sourceLoading, setSourceLoading] = useState(false);
+  const autoSubmitted = useRef(false);
 
-  const selectedScenario = useMemo(
-    () => scenarios.find((scenario) => scenario.key === selectedScenarioKey) ?? null,
-    [scenarios, selectedScenarioKey],
+  const display = useMemo(
+    () =>
+      result
+        ? buildMedicationDisplay(result)
+        : { western: [], tcm: [], knowledge: [] },
+    [result],
   );
+  const medicationCount = display.western.length + display.tcm.length;
 
   useEffect(() => {
     let cancelled = false;
 
-    async function loadWorkbenchData() {
+    async function loadCoverage() {
       try {
-        const [scenarioData, coverageData] = await Promise.all([
-          fetchJson<{ scenarios: Scenario[] }>("/api/scenarios"),
-          fetchJson<KbCoverage>("/api/kb/coverage"),
-        ]);
+        const data = await fetchJson<KbCoverage>("/api/kb/coverage");
 
         if (!cancelled) {
-          setScenarios(scenarioData.scenarios);
-          setCoverage(coverageData);
+          setCoverage(data);
         }
       } catch {
         if (!cancelled) {
-          setError("暂时无法读取工作台资料。请稍后重试。");
+          setCoverage(null);
         }
       }
     }
 
-    loadWorkbenchData();
+    loadCoverage();
 
     return () => {
       cancelled = true;
     };
   }, []);
 
-  async function submitQuestion() {
-    const trimmed = question.trim();
+  useEffect(() => {
+    if (initialQuestion.trim().length >= 2 && !autoSubmitted.current) {
+      autoSubmitted.current = true;
+      void submitQuestion(initialQuestion);
+    }
+  }, [initialQuestion]);
+
+  async function submitQuestion(input = question) {
+    const trimmed = input.trim();
 
     if (trimmed.length < 2) {
-      setError("请先写下想核对的问题。");
+      setError("请先写下症状、药名或想确认的问题。");
       return;
     }
 
@@ -99,7 +102,6 @@ export function CareGuideWorkbench() {
         method: "POST",
         body: JSON.stringify({
           query: trimmed,
-          scenario: selectedScenarioKey ?? undefined,
           locale: "zh-CN",
         }),
       });
@@ -111,148 +113,168 @@ export function CareGuideWorkbench() {
     }
   }
 
-  async function openSource(target: DrawerTarget) {
+  async function openSources(refs: SourceRef[]) {
+    const safeRefs = refs.slice(0, 6);
+
+    if (safeRefs.length === 0) {
+      return;
+    }
+
     setDrawerOpen(true);
     setSourceLoading(true);
-    setSourceDetail(null);
+    setSourceDetails(null);
 
     try {
-      const [evidence, source] = await Promise.all([
-        fetchJson<SourceDetail>(`/api/evidence/${target.chunkId}`),
-        fetchJson<SourceDetail>(`/api/sources/${encodeURIComponent(target.sourceId)}`),
-      ]);
+      const details = await Promise.all(
+        safeRefs.map(async (target) => {
+          const [evidence, source] = await Promise.all([
+            fetchJson<SourceDetail>(`/api/evidence/${target.chunkId}`),
+            fetchJson<SourceDetail>(
+              `/api/sources/${encodeURIComponent(target.sourceId)}`,
+            ),
+          ]);
 
-      setSourceDetail({
-        ...source,
-        ...evidence,
-        source_id: target.sourceId,
-        chunk_id: target.chunkId,
-      });
+          return {
+            ...source,
+            ...evidence,
+            source_id: target.sourceId,
+            chunk_id: target.chunkId,
+          };
+        }),
+      );
+
+      setSourceDetails(details);
     } catch {
-      setSourceDetail(null);
+      setSourceDetails(null);
     } finally {
       setSourceLoading(false);
     }
   }
 
   return (
-    <main className="min-h-screen bg-care-wash text-care-ink">
-      <div className="mx-auto grid min-h-screen w-full max-w-7xl gap-6 px-4 py-5 sm:px-6 lg:grid-cols-[380px_minmax(0,1fr)] lg:px-8 lg:py-8">
-        <aside className="space-y-5 lg:sticky lg:top-8 lg:h-[calc(100vh-4rem)] lg:overflow-y-auto lg:pr-1">
-          <header className="rounded-md border border-care-line bg-care-paper px-5 py-5">
-            <p className="text-sm font-semibold text-care-primary">CareGuide AI</p>
-            <h1 className="mt-3 text-2xl font-semibold leading-9 text-care-ink">
-              家庭用药资料工作台
-            </h1>
-            <p className="mt-3 text-sm leading-7 text-care-muted">
-              把复杂用药资料整理成家人能看懂的说明。我们不会替你诊断，也不会替你决定怎么用药。
+    <div className="consult-enter mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-10 lg:py-10">
+      <div className="consult-enter-input mb-8 flex flex-col gap-5 rounded-[36px] border border-care-line bg-care-paper p-6 shadow-care-card lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p className="text-sm font-semibold text-care-primary">咨询台</p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-care-ink">
+            今天想先确认哪件事？
+          </h1>
+          <p className="mt-3 max-w-2xl text-sm leading-7 text-care-muted">
+            可以直接写“男 25 感冒 中成药”这类问题。页面会优先展示具体药品卡片，再把症状说明放在后面。
+          </p>
+        </div>
+        <div className="rounded-2xl bg-care-soft px-4 py-3 text-sm text-care-muted">
+          当前本地资料：{coverage?.source_documents ?? "多"} 份资料，
+          {coverage?.source_chunks ?? "多"} 段可查原文
+        </div>
+      </div>
+
+      <div className="consult-enter-input">
+        <QuestionComposer
+          value={question}
+          loading={loading}
+          onChange={(value) => {
+            setQuestion(value);
+            setError(null);
+          }}
+          onSubmit={() => void submitQuestion()}
+        />
+      </div>
+
+      <div className="consult-enter-results mt-6 space-y-8">
+        {error ? (
+          <div className="rounded-[24px] border border-care-danger/30 bg-care-danger-soft px-5 py-4 text-sm leading-7 text-care-ink">
+            {error}
+          </div>
+        ) : null}
+
+        {loading ? (
+          <div className="rounded-[30px] border border-care-line bg-care-paper p-6 shadow-care-soft">
+            <p className="text-base font-semibold text-care-ink">正在查询</p>
+            <p className="mt-2 text-sm text-care-muted">
+              正在核对本地资料，并整理可以直接查看的用药卡片。
             </p>
-          </header>
+            <div className="mt-5 grid gap-3 md:grid-cols-2">
+              <div className="h-36 rounded-3xl bg-care-soft" />
+              <div className="h-36 rounded-3xl bg-care-soft" />
+            </div>
+          </div>
+        ) : null}
 
-          <KbCoverageBar coverage={coverage} />
+        {!loading && result?.answer_status === "insufficient_evidence" ? (
+          <div className="rounded-[30px] border border-care-line bg-care-paper p-6 shadow-care-soft">
+            <h2 className="text-xl font-semibold text-care-ink">
+              当前本地资料还没有覆盖这个问题
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm leading-7 text-care-muted">
+              可以换一个更具体的药品名、症状或人群描述，例如年龄、持续时间、是否正在服用其他药。
+            </p>
+          </div>
+        ) : null}
 
-          <ScenarioGrid
-            scenarios={scenarios}
-            selectedScenario={selectedScenarioKey}
-            onSelect={(scenario) => {
-              setSelectedScenarioKey(scenario.key);
-              setQuestion(scenario.example_questions[0] ?? "");
-              setError(null);
-            }}
-          />
-
-          <QuestionComposer
-            value={question}
-            selectedScenario={selectedScenario}
-            loading={loading}
-            onChange={setQuestion}
-            onSubmit={submitQuestion}
-            onExample={(example) => {
-              setQuestion(example);
-              setError(null);
-            }}
-          />
-        </aside>
-
-        <section className="space-y-5">
-          {error ? <ErrorState message={error} /> : null}
-          {loading ? <LoadingState /> : null}
-          {!loading && !result && !error ? <EmptyState /> : null}
-
-          {!loading && result ? (
-            <>
-              <AnswerStatusBanner result={result} />
-              <DetectedContext detected={result.detected_entities} />
-
-              {result.answer_status === "insufficient_evidence" ? (
-                <section className="rounded-md border border-care-line bg-care-surface p-6">
-                  <p className="text-base font-semibold text-care-ink">
-                    当前资料不足，暂不能确认
-                  </p>
-                  <p className="mt-2 max-w-2xl text-sm leading-7 text-care-muted">
-                    可以换一种问法，或补充药品名称、年龄、症状和正在使用的药物。
-                  </p>
-                </section>
+        {!loading && result && result.answer_status !== "insufficient_evidence" ? (
+          <>
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="rounded-full bg-care-primary px-4 py-2 text-sm font-semibold text-care-on-primary">
+                {statusLabel(result.answer_status)}
+              </span>
+              {result.answer_status !== "answered_with_evidence" ? (
+                <span className="rounded-full bg-care-warning-soft px-4 py-2 text-sm font-semibold text-care-cocoa">
+                  请结合个人情况谨慎判断
+                </span>
               ) : null}
+            </div>
 
-              <PlainLanguageSummary sentences={result.plain_language_summary} />
-              <SafetyNoticeList notices={result.safety_notices} />
-              <PharmacistQuestions
-                questions={result.questions_for_doctor_or_pharmacist}
-                highlight={
-                  result.answer_status === "needs_professional_confirmation" ||
-                  result.answer_status === "blocked_high_risk"
-                }
+            <section className="space-y-6">
+              <div>
+                <h2 className="text-2xl font-semibold tracking-tight text-care-ink">
+                  推荐药物
+                </h2>
+                <p className="mt-2 text-sm leading-7 text-care-muted">
+                  以下内容按药品聚合，同一种药的多个出处会合并在一张卡片里。
+                </p>
+              </div>
+              <MedicationSection
+                title="西药"
+                groups={display.western}
+                onOpenSources={openSources}
+              />
+              <MedicationSection
+                title="中成药"
+                groups={display.tcm}
+                onOpenSources={openSources}
               />
 
-              {result.evidence_cards.length > 0 ? (
-                <section className="space-y-3">
-                  <div>
-                    <h2 className="text-base font-semibold text-care-ink">
-                      用药资料卡
-                    </h2>
-                    <p className="mt-1 text-sm leading-6 text-care-muted">
-                      每一条都可以打开查看原文和来源。
-                    </p>
-                  </div>
-                  <div className="space-y-3">
-                    {result.evidence_cards.map((card, index) => (
-                      <MedicationCard
-                        key={`${card.title}-${index}`}
-                        card={card}
-                        index={index}
-                        onOpenSource={openSource}
-                      />
-                    ))}
-                  </div>
-                </section>
+              {medicationCount === 0 ? (
+                <div className="rounded-[30px] border border-care-line bg-care-paper p-6 shadow-care-soft">
+                  <h2 className="text-xl font-semibold text-care-ink">
+                    暂时没有可展示的药品卡片
+                  </h2>
+                  <p className="mt-2 max-w-2xl text-sm leading-7 text-care-muted">
+                    可以换一个更具体的药名、症状或用药方向，例如“感冒 中成药”或“布洛芬 儿童 警示”。
+                  </p>
+                </div>
               ) : null}
+            </section>
 
-              {result.limitations.length > 0 ? (
-                <section className="rounded-md border border-care-line bg-care-surface p-4">
-                  <h2 className="text-base font-semibold text-care-ink">限制说明</h2>
-                  <div className="mt-3 space-y-2">
-                    {result.limitations.map((item) => (
-                      <p key={item.sentence_id} className="text-sm leading-7 text-care-muted">
-                        {item.text}
-                      </p>
-                    ))}
-                  </div>
-                </section>
-              ) : null}
+            <KnowledgeSection
+              groups={display.knowledge}
+              onOpenSources={openSources}
+            />
 
-              <SourceList citations={result.citations} onOpenSource={openSource} />
-            </>
-          ) : null}
-        </section>
+            <p className="rounded-[22px] bg-care-cocoa-soft px-4 py-3 text-sm leading-7 text-care-muted">
+              如果症状持续、加重，或你不确定是否适合自己，可以带着这些信息问医生或药师。
+            </p>
+          </>
+        ) : null}
       </div>
 
       <SourceDrawer
         open={drawerOpen}
-        detail={sourceDetail}
+        details={sourceDetails}
         loading={sourceLoading}
         onClose={() => setDrawerOpen(false)}
       />
-    </main>
+    </div>
   );
 }

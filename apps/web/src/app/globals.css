@@ -4,8 +4,8 @@
 
 :root {
   color-scheme: light;
-  --background: oklch(97% 0.012 130);
-  --foreground: oklch(25% 0.025 170);
+  --background: oklch(95.5% 0.02 78);
+  --foreground: oklch(23% 0.028 116);
 }
 
 * {
@@ -14,6 +14,7 @@
 
 html {
   min-height: 100%;
+  scroll-behavior: smooth;
 }
 
 body {
@@ -26,6 +27,8 @@ body {
     "阿里巴巴普惠体",
     "PingFang SC",
     "Microsoft YaHei",
+    "Hiragino Sans GB",
+    "Segoe UI",
     system-ui,
     sans-serif;
   text-rendering: optimizeLegibility;
@@ -38,6 +41,114 @@ select {
   font: inherit;
 }
 
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+::selection {
+  background: oklch(70% 0.115 82 / 0.28);
+}
+
+.hero-scene {
+  background:
+    radial-gradient(circle at 18% 18%, oklch(81% 0.095 76 / 0.52), transparent 34%),
+    radial-gradient(circle at 88% 22%, oklch(42% 0.055 145 / 0.42), transparent 38%),
+    linear-gradient(128deg, oklch(30% 0.05 145), oklch(37% 0.058 78) 54%, oklch(26% 0.035 116));
+}
+
+.hero-ambient {
+  animation: careAmbient 9s ease-in-out infinite alternate;
+}
+
+.hero-float {
+  animation: careFloat 8s ease-in-out infinite alternate;
+}
+
+.hero-panel {
+  animation: carePanel 7s ease-in-out infinite alternate;
+}
+
+.consult-enter {
+  animation: consultFadeIn 260ms ease-out both;
+}
+
+.consult-enter-input {
+  animation: consultRiseIn 360ms ease-out both;
+}
+
+.consult-enter-results {
+  animation: consultResultIn 420ms ease-out both;
+  animation-delay: 70ms;
+}
+
+@keyframes careAmbient {
+  from {
+    transform: translate3d(-1.5%, -1%, 0) scale(1);
+    opacity: 0.72;
+  }
+
+  to {
+    transform: translate3d(1.5%, 1%, 0) scale(1.04);
+    opacity: 0.9;
+  }
+}
+
+@keyframes careFloat {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+
+  to {
+    transform: translate3d(-10px, -14px, 0);
+  }
+}
+
+@keyframes carePanel {
+  from {
+    transform: translate3d(0, 0, 0) rotate(-1deg);
+  }
+
+  to {
+    transform: translate3d(10px, -8px, 0) rotate(1deg);
+  }
+}
+
+@keyframes consultFadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes consultRiseIn {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes consultResultIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -46,5 +157,10 @@ select {
     transition-duration: 1ms !important;
     animation-duration: 1ms !important;
     animation-iteration-count: 1 !important;
+  }
+
+  .hero-scene [class*="scale-"],
+  .consult-enter-input {
+    transform: none !important;
   }
 }

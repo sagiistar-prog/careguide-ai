@@ -15,6 +15,21 @@ export type NormalizedQuery = {
   original_query: string;
   normalized_query: string;
   language: "zh" | "en" | "mixed" | "unknown";
+  user_context: {
+    age: number | null;
+    sex: "male" | "female" | "unknown";
+  };
+  medication_preference: "tcm" | "western" | "any";
+  question_type:
+    | "find_medicine"
+    | "dosage"
+    | "contraindications"
+    | "adverse_reactions"
+    | "warnings"
+    | "prescription"
+    | "disease_knowledge"
+    | "general";
+  detected_symptoms: string[];
   detected_drugs: EntityMatch[];
   detected_conditions: EntityMatch[];
   detected_population: string[];
@@ -59,6 +74,7 @@ export type KeywordSearchResult = ChunkEvidenceBase & {
   keyword_rank: number;
   keyword_score: number;
   matched_terms: string[];
+  content_signals?: string[];
 };
 
 export type VectorSearchResult = ChunkEvidenceBase & {
@@ -78,6 +94,7 @@ export type HybridCandidate = ChunkEvidenceBase & {
   embedding_model?: string;
   dimension?: number;
   matched_terms: string[];
+  content_signals?: string[];
   rrf_score: number;
   rerank_score: number;
   why_selected: string[];

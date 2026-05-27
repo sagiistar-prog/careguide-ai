@@ -1,5 +1,6 @@
 export const COMMON_DISEASE_TERMS = [
   "腹痛",
+  "肚子痛",
   "胃痛",
   "胃脘痛",
   "腹泻",
@@ -7,6 +8,7 @@ export const COMMON_DISEASE_TERMS = [
   "消化不良",
   "中暑",
   "发热",
+  "发烧",
   "感冒",
   "风寒感冒",
   "风热感冒",
@@ -52,6 +54,7 @@ export const BOOK_INTENT_TERMS = [
   "家庭用药",
   "常见病",
   "中成药",
+  "中药",
   "门诊处方",
   "用药指南",
   "适用于",
@@ -66,6 +69,8 @@ export const PRESCRIPTION_STRUCTURE_TERMS = [
   "每次",
   "疗程",
   "适用于",
+  "适应症",
+  "主治",
   "注意",
   "禁忌",
   "不宜",
@@ -81,11 +86,38 @@ export const MEDICINE_FORM_TERMS = [
   "胶囊",
   "颗粒",
   "丸",
+  "散",
+  "汤",
   "口服液",
   "注射液",
   "煎服",
   "冲服",
   "外用",
+] as const;
+
+export const KNOWN_MEDICINE_CANDIDATE_TERMS = [
+  "感冒清热颗粒",
+  "风寒感冒颗粒",
+  "小青龙合剂",
+  "通宣理肺丸",
+  "止嗽宁嗽胶囊",
+  "杏苏止咳糖浆",
+  "三拗片",
+  "藿香正气水",
+  "藿香正气胶囊",
+  "银翘解毒片",
+  "连花清瘟胶囊",
+  "板蓝根颗粒",
+  "双黄连口服液",
+  "复方鲜竹沥液",
+  "清开灵颗粒",
+  "小柴胡颗粒",
+  "保和丸",
+  "大山楂丸",
+  "附子理中丸",
+  "麻仁丸",
+  "布洛芬",
+  "对乙酰氨基酚",
 ] as const;
 
 const EXPLICIT_ENGLISH_DRUGS = [
@@ -103,11 +135,13 @@ const BOOK_QUESTION_PATTERNS = [
   "用药指南",
   "可以参考哪些",
   "怎么办",
-  "吃什么药",
-  "吃点什么",
   "怎么处理",
   "怎么调养",
   "怎么改善",
+  "吃什么药",
+  "吃点什么",
+  "用什么药",
+  "有哪些药",
 ] as const;
 
 const SYMPTOM_EXPANSIONS = [
@@ -159,6 +193,10 @@ const SYMPTOM_EXPANSIONS = [
     ],
   },
   {
+    triggers: ["发热", "发烧"],
+    terms: ["发热", "发烧", "退热", "布洛芬", "对乙酰氨基酚", "用量", "注意"],
+  },
+  {
     triggers: ["咳嗽", "咽痛"],
     terms: ["咳嗽", "咽痛", "风寒", "风热", "痰湿", "中成药", "处方", "用法", "注意"],
   },
@@ -178,7 +216,7 @@ const SYMPTOM_EXPANSIONS = [
 
 const OFFICIAL_REFERENCE_EXPANSIONS = [
   {
-    triggers: ["感冒", "发热", "发烧", "退烧", "儿童发烧", "儿童退烧"],
+    triggers: ["感冒", "发热", "发烧", "退热", "儿童发烧", "儿童退热"],
     terms: [
       "fever",
       "common cold",
@@ -263,7 +301,7 @@ export function analyzeBookQuery(query: string): BookQueryLexiconResult {
     commonDiseaseQuestion ||
     hasBookQuestionPattern(query);
   const structureTerms = bookIntent
-    ? ["处方", "适用于", "用法", "用量", "注意", "禁忌", "慎用"]
+    ? ["处方", "适用于", "适应症", "用法", "用量", "注意", "禁忌", "慎用"]
     : [];
 
   return {

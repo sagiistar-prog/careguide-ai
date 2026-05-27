@@ -93,21 +93,20 @@ async function main() {
       "未知问题不应返回 selected evidence。",
     );
 
-    const bookQueries = [
-      "腹痛相关处方有哪些？",
-      "肚子痛怎么办？",
-      "中暑怎么处理？",
-      "风寒感冒怎么调养？",
-      "胃痛吃什么药？",
-      "咳嗽怎么改善？",
-      "腹泻怎么办？",
-      "失眠吃什么中药？",
-      "头痛怎么办？",
+    const medicationQueries = [
+      "男 25 感冒 中成药",
+      "25岁男 感冒吃什么中成药",
+      "风寒感冒吃点什么中药",
+      "感冒可以吃哪些中成药",
+      "咳嗽可以吃什么药",
+      "胃痛吃什么药",
+      "腹痛相关处方有哪些",
+      "中暑怎么处理",
     ];
-    const bookSummaries = [];
+    const summaries = [];
 
-    for (const query of bookQueries) {
-      const bookPackage = await hybridSearch({
+    for (const query of medicationQueries) {
+      const medicationPackage = await hybridSearch({
         db,
         query,
         vectorConfig: {
@@ -116,12 +115,20 @@ async function main() {
           embeddingDimension: env.GEMINI_EMBEDDING_DIMENSION,
         },
       });
-      const bookEvidence = bookPackage.selected_evidence.filter(
+      const bookEvidence = medicationPackage.selected_evidence.filter(
         (evidence) => evidence.source_type === "medical_book",
       );
 
-      assert(bookPackage.normalized_query.book_intent, `没有识别出 book_intent：${query}`);
-      assert(bookEvidence.length > 0, `中文书籍问题没有命中 medical_book：${query}`);
+      assert(
+        medicationPackage.normalized_query.book_intent,
+        `没有识别出 book_intent：${query}`,
+      );
+      assert(
+        medicationPackage.normalized_query.question_type === "find_medicine" ||
+          medicationPackage.normalized_query.question_type === "prescription",
+        `没有识别为找药或处方意图：${query}`,
+      );
+      assert(bookEvidence.length > 0, `中文找药问题没有命中 medical_book：${query}`);
 
       for (const evidence of bookEvidence) {
         assert(Boolean(evidence.source_id), "medical_book 证据缺少 source_id。");
@@ -137,10 +144,12 @@ async function main() {
         );
       }
 
-      bookSummaries.push({
+      summaries.push({
         query,
-        selected_evidence_count: bookPackage.selected_evidence.length,
+        selected_evidence_count: medicationPackage.selected_evidence.length,
         medical_book_evidence_count: bookEvidence.length,
+        top_source_type: medicationPackage.selected_evidence[0]?.source_type,
+        top_section_name: medicationPackage.selected_evidence[0]?.section_name,
       });
     }
 
@@ -154,7 +163,7 @@ async function main() {
           insufficient_query_status: insufficientPackage.insufficient_evidence,
           insufficient_query_evidence_count:
             insufficientPackage.selected_evidence.length,
-          book_queries: bookSummaries,
+          medication_queries: summaries,
         },
         null,
         2,

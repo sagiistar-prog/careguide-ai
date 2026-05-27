@@ -43,6 +43,16 @@ export type MedicationCardData = {
   confidence: "high" | "medium" | "low";
   applicability: string;
   not_applicable_when: string;
+  medication_fields?: {
+    medicine_name?: string;
+    medicine_category?: "western" | "tcm" | "knowledge";
+    indication?: string;
+    dosage?: string;
+    decoction?: string;
+    contraindications?: string;
+    cautions?: string;
+    adverse_reactions?: string;
+  };
 };
 
 export type Citation = {
@@ -52,6 +62,11 @@ export type Citation = {
   source_document_id: string;
   document_title: string;
   source_organization: string;
+  source_type?: string;
+  book_title?: string | null;
+  page_start?: number | null;
+  page_end?: number | null;
+  location?: string | null;
   published_at: string | null;
   source_updated_at: string | null;
   section_name: string;

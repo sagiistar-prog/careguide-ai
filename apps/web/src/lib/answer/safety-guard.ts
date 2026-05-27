@@ -43,21 +43,24 @@ const EMERGENCY_OR_SEVERE_TERMS = [
 ] as const;
 
 const DIRECT_PERSONAL_ADVICE_PATTERNS = [
-  /你(应该|可以|需要|最好|适合).{0,16}(吃|服用|使用|加量|减量|停用|换药|合用)/,
+  /你(现在|本人|直接|可以直接|可直接|就|应该|必须).{0,24}(吃|服用|使用|注射|外用|加量|减量|停用|换药|合用)/,
+  /(按|照).{0,12}(这个|该|上述|以上).{0,12}(剂量|用量|处方|方案).{0,16}(吃|服用|使用|执行|用)/,
+  /这个(药|处方|方案).{0,12}(适合你|适用于你|就是给你的)/,
+  /(你可以|可以).{0,8}直接.{0,12}(吃|服用|使用|照做|这样用)/,
   /推荐你.{0,16}(吃|服用|使用|加量|减量|停用|换药|合用)/,
   /建议你.{0,16}(吃|服用|使用|加量|减量|停用|换药|合用)/,
-  /这个药适合你/,
   /放心使用/,
   /\byou should\b.{0,48}\b(take|use|start|stop|increase|decrease|combine)\b/i,
   /\byou can\b.{0,48}\b(take|use|start|stop|increase|decrease|combine)\b/i,
 ] as const;
 
 export function assessHighRisk(query: string) {
+  const lowered = query.toLowerCase();
   const matchedTerms = HIGH_RISK_TERMS.filter((term) =>
-    query.toLowerCase().includes(term.toLowerCase()),
+    lowered.includes(term.toLowerCase()),
   );
   const matchedEmergencyTerms = EMERGENCY_OR_SEVERE_TERMS.filter((term) =>
-    query.toLowerCase().includes(term.toLowerCase()),
+    lowered.includes(term.toLowerCase()),
   );
 
   return {
@@ -74,7 +77,7 @@ export function assessHighRisk(query: string) {
         ? ("urgent_risk_with_evidence" as const)
         : matchedTerms.length > 0
           ? ("show_general_prescription_with_risk_context" as const)
-        : ("standard_source_backed_explanation" as const),
+          : ("standard_source_backed_explanation" as const),
   };
 }
 
@@ -153,7 +156,7 @@ export function applySafetyGuard(input: {
       fallbackSentence({
         sentenceId: "safety_high_risk_evidence_2",
         text:
-          "你可以重点核对年龄、孕期或哺乳、肝肾功能、过敏史、正在使用的药物、症状严重程度和持续时间，这些因素可能改变资料是否适用于你。",
+          "年龄、孕期或哺乳、肝肾功能、过敏史、正在使用的药物、症状严重程度和持续时间，都可能改变资料是否适用于你。",
         claimType: "professional_confirmation",
       }),
       ...guarded.safety_notices,
@@ -167,7 +170,7 @@ export function applySafetyGuard(input: {
         fallbackSentence({
           sentenceId: "ask_professional_1",
           text:
-            "我的症状严重程度、持续时间或伴随表现是否提示需要及时就医，而不是先自行用药？",
+            "症状的严重程度、持续时间或伴随表现，是否提示需要及时就医，而不是先自行用药？",
           claimType: "professional_confirmation",
         }),
         fallbackSentence({

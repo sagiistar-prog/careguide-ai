@@ -14,7 +14,7 @@ export function ScenarioGrid({
 }: ScenarioGridProps) {
   if (scenarios.length === 0) {
     return (
-      <div className="rounded-md border border-care-line bg-care-surface px-4 py-5 text-sm text-care-muted">
+      <div className="rounded-[24px] border border-care-line bg-care-surface px-4 py-5 text-sm text-care-muted">
         场景正在加载。你也可以先直接输入问题。
       </div>
     );
@@ -23,9 +23,9 @@ export function ScenarioGrid({
   return (
     <div className="space-y-3">
       <div>
-        <h2 className="text-base font-semibold text-care-ink">先选一个家庭场景</h2>
+        <h2 className="text-base font-semibold text-care-ink">常见场景</h2>
         <p className="mt-1 text-sm leading-6 text-care-muted">
-          选择场景只是帮助整理资料，不会替你判断是否适合用药。
+          选择场景会自动带入示例问题，方便你更快开始。
         </p>
       </div>
       <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
@@ -37,7 +37,7 @@ export function ScenarioGrid({
               key={scenario.key}
               type="button"
               onClick={() => onSelect(scenario)}
-              className={`rounded-md border px-4 py-3 text-left transition duration-200 ease-out hover:border-care-primary hover:bg-care-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-care-focus ${
+              className={`rounded-[20px] border px-4 py-3 text-left transition duration-200 ease-out hover:-translate-y-0.5 hover:border-care-primary hover:bg-care-soft hover:shadow-care-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-care-focus active:translate-y-0 ${
                 active
                   ? "border-care-primary bg-care-soft text-care-ink"
                   : "border-care-line bg-care-surface text-care-ink"

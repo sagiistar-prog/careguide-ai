@@ -1,3 +1,8 @@
+import {
+  KNOWN_MEDICINE_CANDIDATE_TERMS,
+  MEDICINE_FORM_TERMS,
+  PRESCRIPTION_STRUCTURE_TERMS,
+} from "./book-query-lexicon";
 import type { KeywordSearchResult, NormalizedQuery, RetrievalDb } from "./types";
 
 type KeywordRow = {
@@ -21,6 +26,7 @@ type KeywordRow = {
   page_end: number | null;
   location: string | null;
   keyword_score: number;
+  content_signals: string[] | null;
 };
 
 function asDateString(value: unknown) {
@@ -50,25 +56,90 @@ function escapeLike(value: string) {
   return value.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
 }
 
+function toLikePatterns(terms: readonly string[]) {
+  return Array.from(
+    new Set(
+      terms
+        .filter((term) => /[\u3400-\u9fff]/.test(term))
+        .filter((term) => term.length >= 2)
+        .map((term) => `%${escapeLike(term)}%`),
+    ),
+  );
+}
+
 function buildChineseBookPatterns(query: NormalizedQuery) {
   if (!query.book_intent) {
     return [];
   }
 
-  return Array.from(
-    new Set(
-      [
-        ...query.book_query_terms.common_disease_terms,
-        ...query.book_query_terms.tcm_pattern_terms,
-        ...query.book_query_terms.book_intent_terms,
-        ...query.book_query_terms.prescription_structure_terms,
-        ...query.expanded_terms,
-      ]
-        .filter((term) => /[\u3400-\u9fff]/.test(term))
-        .filter((term) => term.length >= 2)
-        .map((term) => `%${escapeLike(term)}%`),
-    ),
-  ).slice(0, 24);
+  return toLikePatterns([
+    ...query.book_query_terms.common_disease_terms,
+    ...query.book_query_terms.tcm_pattern_terms,
+    ...query.book_query_terms.book_intent_terms,
+    ...query.book_query_terms.prescription_structure_terms,
+    ...query.expanded_terms,
+    ...(query.medication_preference === "tcm" ? MEDICINE_FORM_TERMS : []),
+  ]).slice(0, 32);
+}
+
+function buildMedicineCandidatePatterns(query: NormalizedQuery) {
+  const wantsMedicine =
+    query.book_intent ||
+    query.medication_preference === "tcm" ||
+    query.question_type === "find_medicine" ||
+    query.question_type === "prescription";
+
+  if (!wantsMedicine) {
+    return [];
+  }
+
+  const symptomSpecific: string[] = [];
+
+  if (query.detected_symptoms.some((term) => ["感冒", "咳嗽", "发热", "发烧"].includes(term))) {
+    symptomSpecific.push(
+      "感冒清热颗粒",
+      "风寒感冒颗粒",
+      "小青龙合剂",
+      "通宣理肺丸",
+      "止嗽宁嗽胶囊",
+      "杏苏止咳糖浆",
+      "银翘解毒片",
+      "双黄连口服液",
+      "布洛芬",
+      "对乙酰氨基酚",
+    );
+  }
+
+  if (query.detected_symptoms.some((term) => ["胃痛", "腹痛", "肚子痛"].includes(term))) {
+    symptomSpecific.push("保和丸", "大山楂丸", "附子理中丸", "黄连上清丸");
+  }
+
+  if (query.detected_symptoms.includes("中暑")) {
+    symptomSpecific.push("藿香正气水", "藿香正气胶囊");
+  }
+
+  return toLikePatterns([
+    ...KNOWN_MEDICINE_CANDIDATE_TERMS,
+    ...MEDICINE_FORM_TERMS,
+    ...symptomSpecific,
+  ]);
+}
+
+function buildPrescriptionStructurePatterns(query: NormalizedQuery) {
+  if (!query.book_intent && query.question_type !== "find_medicine") {
+    return [];
+  }
+
+  return toLikePatterns([
+    ...PRESCRIPTION_STRUCTURE_TERMS,
+    "主治",
+    "功效",
+    "症见",
+    "一次",
+    "一日",
+    "每日",
+    "每次",
+  ]);
 }
 
 function matchedTerms(row: KeywordRow, query: NormalizedQuery) {
@@ -80,6 +151,7 @@ function matchedTerms(row: KeywordRow, query: NormalizedQuery) {
     row.document_title,
     row.book_title ?? "",
     row.location ?? "",
+    ...(row.content_signals ?? []),
   ]
     .join(" ")
     .toLowerCase();
@@ -97,6 +169,9 @@ export async function keywordSearch(input: {
 }): Promise<KeywordSearchResult[]> {
   const searchText = buildSearchText(input.query);
   const chineseBookPatterns = buildChineseBookPatterns(input.query);
+  const medicineCandidatePatterns = buildMedicineCandidatePatterns(input.query);
+  const prescriptionStructurePatterns =
+    buildPrescriptionStructurePatterns(input.query);
   const rows: KeywordRow[] = [];
 
   if (!searchText && chineseBookPatterns.length === 0) {
@@ -129,7 +204,8 @@ export async function keywordSearch(input: {
           sc.page_start,
           sc.page_end,
           sc.location,
-          ts_rank_cd(sc.search_vector, q.query) as keyword_score
+          ts_rank_cd(sc.search_vector, q.query) as keyword_score,
+          array[]::text[] as content_signals
         from public.source_chunks sc
         join public.source_documents sd on sd.id = sc.source_document_id
         cross join q
@@ -183,8 +259,32 @@ export async function keywordSearch(input: {
                 select 1 from unnest(${chineseBookPatterns}::text[]) as p(pattern)
                 where coalesce(sc.book_title, sd.document_title) ilike p.pattern escape E'\\\\'
               ) then 0.15 else 0
+            end +
+            case
+              when exists (
+                select 1 from unnest(${medicineCandidatePatterns}::text[]) as p(pattern)
+                where sc.original_text ilike p.pattern escape E'\\\\'
+                  or sc.section_title ilike p.pattern escape E'\\\\'
+              ) then 0.62 else 0
+            end +
+            case
+              when exists (
+                select 1 from unnest(${prescriptionStructurePatterns}::text[]) as p(pattern)
+                where sc.original_text ilike p.pattern escape E'\\\\'
+              ) then 0.32 else 0
             end
-          ) as keyword_score
+          ) as keyword_score,
+          array(
+            select regexp_replace(p.pattern, '%', '', 'g')
+            from unnest(${medicineCandidatePatterns}::text[]) as p(pattern)
+            where sc.original_text ilike p.pattern escape E'\\\\'
+              or sc.section_title ilike p.pattern escape E'\\\\'
+          ) ||
+          array(
+            select regexp_replace(p.pattern, '%', '', 'g')
+            from unnest(${prescriptionStructurePatterns}::text[]) as p(pattern)
+            where sc.original_text ilike p.pattern escape E'\\\\'
+          ) as content_signals
         from public.source_chunks sc
         join public.source_documents sd on sd.id = sc.source_document_id
         where sc.answer_eligible = true
@@ -197,7 +297,7 @@ export async function keywordSearch(input: {
         order by keyword_score desc,
           case when sd.source_type = 'medical_book' then 0 else 1 end,
           sc.created_at asc
-        limit ${Math.max(input.topK, 40)}
+        limit ${Math.max(input.topK, 50)}
       `),
     );
   }
@@ -225,5 +325,6 @@ export async function keywordSearch(input: {
     keyword_rank: index + 1,
     keyword_score: Number(row.keyword_score),
     matched_terms: matchedTerms(row, input.query),
+    content_signals: row.content_signals ?? [],
   }));
 }

@@ -31,8 +31,8 @@ export function DetectedContext({
   }
 
   return (
-    <section className="rounded-md border border-care-line bg-care-surface px-4 py-3">
-      <p className="text-xs font-medium text-care-muted">本次整理的线索</p>
+    <section className="rounded-[24px] border border-care-line bg-care-surface px-4 py-3">
+      <p className="text-xs font-medium text-care-muted">已识别的信息</p>
       <div className="mt-2 flex flex-wrap gap-2">
         {items.map((item, index) => (
           <span

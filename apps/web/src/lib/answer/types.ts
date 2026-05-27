@@ -45,6 +45,17 @@ export type EvidenceCardType =
   | "patient_education"
   | "insufficient_evidence";
 
+export type MedicationFields = {
+  medicine_name?: string;
+  medicine_category?: "western" | "tcm" | "knowledge";
+  indication?: string;
+  dosage?: string;
+  decoction?: string;
+  contraindications?: string;
+  cautions?: string;
+  adverse_reactions?: string;
+};
+
 export type EvidenceCard = {
   card_type: EvidenceCardType;
   title: string;
@@ -56,6 +67,7 @@ export type EvidenceCard = {
   confidence: "high" | "medium" | "low";
   applicability: string;
   not_applicable_when: string;
+  medication_fields?: MedicationFields;
 };
 
 export type CitationRecord = {

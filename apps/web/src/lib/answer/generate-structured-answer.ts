@@ -8,6 +8,7 @@ import type {
   AnswerSentence,
   EvidenceCard,
   GenerateAnswerInput,
+  MedicationFields,
   StructuredAnswer,
 } from "./types";
 
@@ -253,6 +254,33 @@ function normalizeClaimType(value: unknown): AnswerSentence["claim_type"] {
   return "general";
 }
 
+function normalizeMedicationFields(value: unknown): MedicationFields | undefined {
+  if (typeof value !== "object" || value === null) {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  const stringField = (key: keyof MedicationFields) =>
+    typeof record[key] === "string" ? String(record[key]).trim() : undefined;
+  const category =
+    record.medicine_category === "western" ||
+    record.medicine_category === "tcm" ||
+    record.medicine_category === "knowledge"
+      ? record.medicine_category
+      : undefined;
+
+  return {
+    medicine_name: stringField("medicine_name"),
+    medicine_category: category,
+    indication: stringField("indication"),
+    dosage: stringField("dosage"),
+    decoction: stringField("decoction"),
+    contraindications: stringField("contraindications"),
+    cautions: stringField("cautions"),
+    adverse_reactions: stringField("adverse_reactions"),
+  };
+}
+
 function normalizeCard(value: unknown): EvidenceCard {
   const record =
     typeof value === "object" && value !== null
@@ -286,6 +314,7 @@ function normalizeCard(value: unknown): EvidenceCard {
       typeof record.not_applicable_when === "string"
         ? record.not_applicable_when
         : "",
+    medication_fields: normalizeMedicationFields(record.medication_fields),
   };
 }
 

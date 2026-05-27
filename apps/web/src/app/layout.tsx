@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "CareGuide AI",
-  description: "把复杂用药资料整理成家人能看懂的说明。",
+  description: "家庭常见病用药资料咨询台",
 };
 
 export default function RootLayout({

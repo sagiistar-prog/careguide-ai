@@ -1,5 +1,6 @@
 import {
   COMMON_DISEASE_TERMS,
+  MEDICINE_FORM_TERMS,
   PRESCRIPTION_STRUCTURE_TERMS,
   TCM_PATTERN_TERMS,
 } from "./book-query-lexicon";
@@ -53,6 +54,7 @@ function candidateText(candidate: HybridCandidate) {
     ...candidate.medicine_names,
     ...candidate.ingredient_names,
     ...candidate.scenario_tags,
+    ...(candidate.content_signals ?? []),
   ]
     .join(" ")
     .toLowerCase();
@@ -70,6 +72,47 @@ function shouldPreferDrugLabel(query: NormalizedQuery) {
       ["warnings", "contraindications", "adverse_reactions", "dosage"].includes(term),
     )
   );
+}
+
+function wantsMedicationCard(query: NormalizedQuery) {
+  return ["find_medicine", "dosage", "prescription"].includes(query.question_type);
+}
+
+function looksLikeMedicationCandidate(candidate: HybridCandidate) {
+  const text = candidateText(candidate);
+
+  return includesAny(text, [
+    ...MEDICINE_FORM_TERMS,
+    ...PRESCRIPTION_STRUCTURE_TERMS,
+    "感冒清热颗粒",
+    "风寒感冒颗粒",
+    "小青龙合剂",
+    "藿香正气",
+    "布洛芬",
+    "对乙酰氨基酚",
+    "acetaminophen",
+    "ibuprofen",
+    "metformin",
+    "amlodipine",
+    "lisinopril",
+  ]);
+}
+
+function looksLikeDiseaseKnowledge(candidate: HybridCandidate) {
+  const text = candidateText(candidate);
+
+  return includesAny(text, [
+    "是什么",
+    "分类",
+    "概述",
+    "知识",
+    "症状说明",
+    "症状表现",
+    "病因",
+    "辨证",
+    "第一章",
+    "第二章",
+  ]);
 }
 
 function matchesDetectedDrugs(candidate: HybridCandidate, query: NormalizedQuery) {
@@ -166,7 +209,7 @@ export function rerankEvidence(input: {
     let score = candidate.rrf_score;
 
     score += 0.03;
-    why.push("official_source_metadata_present");
+    why.push("source_metadata_present");
 
     if (candidate.published_at || candidate.source_updated_at) {
       score += 0.015;
@@ -192,13 +235,26 @@ export function rerankEvidence(input: {
     }
 
     if (isBookIntentBook) {
-      score += shouldPreferDrugLabel(input.query) ? 0.06 : 0.14;
+      score += shouldPreferDrugLabel(input.query) ? 0.05 : 0.15;
       why.push("medical_book_matches_common_condition_reference_intent");
 
       if (candidate.keyword_rank != null) {
         score += 0.04;
         why.push("medical_book_keyword_match");
       }
+
+      if (looksLikeMedicationCandidate(candidate)) {
+        score += input.query.medication_preference === "tcm" ? 0.22 : 0.14;
+        why.push("specific_medicine_or_regimen_priority");
+      }
+    }
+
+    if (
+      input.query.medication_preference === "western" &&
+      candidate.source_type === "medical_book"
+    ) {
+      score -= 0.28;
+      why.push("medical_book_deprioritized_for_western_medicine_query");
     }
 
     if (
@@ -213,7 +269,7 @@ export function rerankEvidence(input: {
         ],
       )
     ) {
-      score += 0.035;
+      score += 0.04;
       why.push("candidate_matches_expanded_book_terms");
     }
 
@@ -223,6 +279,24 @@ export function rerankEvidence(input: {
     ) {
       score += 0.08;
       why.push("official_drug_label_priority_for_drug_safety_query");
+    }
+
+    if (
+      input.query.medication_preference === "western" &&
+      ["drug_label", "drug_label_candidate"].includes(candidate.source_type)
+    ) {
+      score += 0.26;
+      why.push("western_medicine_preference_priority");
+    }
+
+    if (wantsMedicationCard(input.query) && looksLikeMedicationCandidate(candidate)) {
+      score += 0.1;
+      why.push("medication_query_specific_card_priority");
+    }
+
+    if (wantsMedicationCard(input.query) && looksLikeDiseaseKnowledge(candidate)) {
+      score -= 0.08;
+      why.push("disease_knowledge_deprioritized_for_medicine_query");
     }
 
     const seenDocumentCount = documentCounts.get(candidate.source_document_id) ?? 0;
@@ -245,7 +319,15 @@ export function rerankEvidence(input: {
   const sorted = weighted.sort((a, b) => b.rerank_score - a.rerank_score);
   const selected = sorted.slice(0, input.selectedTopK);
 
-  if (input.query.book_intent) {
+  if (
+    input.query.book_intent &&
+    input.query.medication_preference !== "western"
+  ) {
+    const topBookMedicine = sorted.find(
+      (candidate) =>
+        candidate.source_type === "medical_book" &&
+        looksLikeMedicationCandidate(candidate),
+    );
     const topBook = sorted.find((candidate) => candidate.source_type === "medical_book");
     const topNonBook = sorted.find(
       (candidate) => candidate.source_type !== "medical_book",
@@ -255,7 +337,10 @@ export function rerankEvidence(input: {
       (candidate) => candidate.source_type !== "medical_book",
     );
 
-    if (topBook && !hasBook) {
+    if (topBookMedicine && !selected.some((candidate) => candidate.chunk_id === topBookMedicine.chunk_id)) {
+      selected.unshift(topBookMedicine);
+      selected.splice(input.selectedTopK);
+    } else if (topBook && !hasBook) {
       selected.unshift(topBook);
       selected.splice(input.selectedTopK);
     }

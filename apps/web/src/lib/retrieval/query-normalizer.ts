@@ -18,7 +18,7 @@ const SCENARIO_TERMS: Record<string, string[]> = {
 };
 
 const POPULATION_RULES = [
-  { key: "children", values: ["儿童", "孩子", "小孩", "child", "children", "pediatric"] },
+  { key: "children", values: ["儿童", "孩子", "小孩", "宝宝", "child", "children", "pediatric"] },
   { key: "older_adult", values: ["老人", "老年", "elderly", "older adult", "geriatric"] },
   { key: "pregnancy", values: ["孕", "怀孕", "妊娠", "pregnant", "pregnancy"] },
   { key: "adult", values: ["成人", "adult"] },
@@ -30,6 +30,64 @@ const RISK_RULES = [
   { key: "adverse_reactions", values: ["side effect", "side effects", "adverse", "不良反应", "副作用"] },
   { key: "dosage", values: ["dose", "dosage", "剂量", "用量"] },
   { key: "recall", values: ["recall", "enforcement", "召回"] },
+] as const;
+
+const SYMPTOM_RULES = [
+  "感冒",
+  "发烧",
+  "发热",
+  "咳嗽",
+  "咽痛",
+  "腹痛",
+  "肚子痛",
+  "胃痛",
+  "腹泻",
+  "便秘",
+  "中暑",
+  "头痛",
+  "失眠",
+  "鼻炎",
+  "过敏",
+] as const;
+
+const TCM_PREFERENCE_TERMS = [
+  "中成药",
+  "中药",
+  "颗粒",
+  "丸",
+  "散",
+  "汤",
+  "冲剂",
+  "口服液",
+  "风寒",
+  "风热",
+] as const;
+
+const WESTERN_PREFERENCE_TERMS = [
+  "西药",
+  "布洛芬",
+  "对乙酰氨基酚",
+  "ibuprofen",
+  "acetaminophen",
+  "paracetamol",
+  "metformin",
+  "amlodipine",
+  "lisinopril",
+] as const;
+
+const FIND_MEDICINE_TERMS = [
+  "吃什么",
+  "吃点什么",
+  "用什么",
+  "有哪些药",
+  "什么药",
+  "中成药",
+  "中药",
+  "西药",
+  "处方",
+  "用药方案",
+  "怎么办",
+  "怎么处理",
 ] as const;
 
 function detectLanguage(query: string): NormalizedQuery["language"] {
@@ -88,10 +146,80 @@ function unique(values: string[]) {
   return Array.from(new Set(values.filter(Boolean)));
 }
 
+function parseAge(query: string) {
+  const match = query.match(/(?:^|[^\d])(\d{1,3})\s*(?:岁|周岁|year|years|y\b)/i);
+  return match ? Number(match[1]) : null;
+}
+
+function parseSex(query: string): NormalizedQuery["user_context"]["sex"] {
+  if (/(男|男性|男士|male|man)/i.test(query)) {
+    return "male";
+  }
+
+  if (/(女|女性|女士|female|woman)/i.test(query)) {
+    return "female";
+  }
+
+  return "unknown";
+}
+
+function detectMedicationPreference(
+  query: string,
+): NormalizedQuery["medication_preference"] {
+  if (includesAny(query, TCM_PREFERENCE_TERMS)) {
+    return "tcm";
+  }
+
+  if (includesAny(query, WESTERN_PREFERENCE_TERMS)) {
+    return "western";
+  }
+
+  return "any";
+}
+
+function detectQuestionType(
+  query: string,
+  riskTerms: string[],
+): NormalizedQuery["question_type"] {
+  if (includesAny(query, FIND_MEDICINE_TERMS)) {
+    return "find_medicine";
+  }
+
+  if (riskTerms.includes("dosage") || includesAny(query, ["用量", "剂量", "怎么吃", "怎么用"])) {
+    return "dosage";
+  }
+
+  if (riskTerms.includes("contraindications")) {
+    return "contraindications";
+  }
+
+  if (riskTerms.includes("adverse_reactions")) {
+    return "adverse_reactions";
+  }
+
+  if (riskTerms.includes("warnings")) {
+    return "warnings";
+  }
+
+  if (includesAny(query, ["处方", "方剂", "用药方案"])) {
+    return "prescription";
+  }
+
+  if (includesAny(query, ["是什么", "怎么理解", "分类", "证型", "症状说明"])) {
+    return "disease_knowledge";
+  }
+
+  return "general";
+}
+
+function detectSymptoms(query: string) {
+  return SYMPTOM_RULES.filter((term) => query.includes(term));
+}
+
 function ruleScenarioMatches(query: string): EntityMatch[] {
   const matches: EntityMatch[] = [];
 
-  if (["感冒", "发热", "发烧", "退烧"].some((term) => query.includes(term))) {
+  if (["感冒", "发热", "发烧", "退热"].some((term) => query.includes(term))) {
     matches.push({
       id: "cold_fever",
       entity_type: "scenario",
@@ -103,7 +231,7 @@ function ruleScenarioMatches(query: string): EntityMatch[] {
   }
 
   if (
-    ["儿童发热", "儿童发烧", "儿童退烧", "孩子发烧", "小孩发烧"].some((term) =>
+    ["儿童发热", "儿童发烧", "儿童退热", "孩子发烧", "小孩发烧"].some((term) =>
       query.includes(term),
     )
   ) {
@@ -111,7 +239,7 @@ function ruleScenarioMatches(query: string): EntityMatch[] {
       id: "children_fever",
       entity_type: "scenario",
       canonical_name: "children_fever",
-      display_name: "儿童退烧",
+      display_name: "儿童退热",
       matched_value: "儿童发热",
       match_source: "rule",
     });
@@ -156,6 +284,9 @@ export async function normalizeQuery(
   const detectedConditions = byType(entities, ["disease"]);
   const detectedPopulation = valuesFromRules(trimmed, POPULATION_RULES);
   const riskTerms = valuesFromRules(trimmed, RISK_RULES);
+  const medicationPreference = detectMedicationPreference(trimmed);
+  const detectedSymptoms = detectSymptoms(trimmed);
+  const questionType = detectQuestionType(trimmed, riskTerms);
   const bookQuery = analyzeBookQuery(trimmed);
   const sectionIntents = riskTerms.filter((term) => term !== "recall");
   const scenarioTerms = detectedScenario.flatMap(
@@ -194,6 +325,7 @@ export async function normalizeQuery(
     ...scenarioTerms,
     ...populationTerms,
     ...riskSearchTerms,
+    ...detectedSymptoms,
     ...bookQuery.expanded_terms,
   ]);
 
@@ -201,6 +333,13 @@ export async function normalizeQuery(
     original_query: originalQuery,
     normalized_query: searchTerms.join(" "),
     language: detectLanguage(trimmed),
+    user_context: {
+      age: parseAge(trimmed),
+      sex: parseSex(trimmed),
+    },
+    medication_preference: medicationPreference,
+    question_type: questionType,
+    detected_symptoms: detectedSymptoms,
     detected_drugs: detectedDrugs,
     detected_conditions: detectedConditions,
     detected_population: detectedPopulation,

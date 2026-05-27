@@ -1,5 +1,5 @@
-import { CareGuideWorkbench } from "../components/workbench/CareGuideWorkbench";
+import { LandingPage } from "../components/landing/LandingPage";
 
 export default function HomePage() {
-  return <CareGuideWorkbench />;
+  return <LandingPage />;
 }

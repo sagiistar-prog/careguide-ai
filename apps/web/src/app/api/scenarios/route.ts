@@ -8,10 +8,11 @@ const SCENARIOS = [
   {
     key: "cold_fever",
     title: "感冒发热",
-    description: "围绕感冒、发热和常见退热药说明书的本地证据。",
+    description: "围绕感冒、发热和常见退热药说明书的本地资料。",
     example_questions: [
+      "男 25 感冒 中成药",
+      "感冒可以吃哪些中成药？",
       "儿童发烧可以看哪些退烧药说明？",
-      "acetaminophen 有哪些 warnings？",
     ],
   },
   {

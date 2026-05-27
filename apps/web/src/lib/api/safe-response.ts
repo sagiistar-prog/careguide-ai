@@ -19,6 +19,9 @@ export function safeAnswerResponse(input: {
   validation: CitationValidationResult;
 }) {
   const answer = input.validation.sanitized_answer;
+  const evidenceByChunk = new Map(
+    input.evidencePackage.selected_evidence.map((item) => [item.chunk_id, item]),
+  );
 
   return {
     request_id: input.requestId,
@@ -34,7 +37,18 @@ export function safeAnswerResponse(input: {
     questions_for_doctor_or_pharmacist:
       answer.questions_for_doctor_or_pharmacist,
     limitations: answer.limitations,
-    citations: answer.citations,
+    citations: answer.citations.map((citation) => {
+      const evidence = evidenceByChunk.get(citation.chunk_id);
+
+      return {
+        ...citation,
+        source_type: evidence?.source_type,
+        book_title: evidence?.book_title,
+        page_start: evidence?.page_start,
+        page_end: evidence?.page_end,
+        location: evidence?.location,
+      };
+    }),
     rejected_claims_count: answer.rejected_claims.length,
     citation_coverage: Math.round(input.validation.citation_coverage * 100),
     created_at: new Date().toISOString(),
