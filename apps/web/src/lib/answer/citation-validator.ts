@@ -220,6 +220,7 @@ export function validateCitations(input: {
     limitations,
     evidence_cards: evidenceCards,
     citations: Array.from(citations.values()),
+    external_search_notes: input.answer.external_search_notes.slice(0, 3),
     rejected_claims: rejected,
   };
 

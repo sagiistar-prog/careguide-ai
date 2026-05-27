@@ -32,6 +32,7 @@ export async function generateGeminiJson(input: {
   apiKey: string;
   model: string;
   prompt: string;
+  terminologyGrounding?: boolean;
 }) {
   const modelPath = input.model.startsWith("models/")
     ? input.model
@@ -41,9 +42,28 @@ export async function generateGeminiJson(input: {
   );
   url.searchParams.set("key", input.apiKey);
 
+  const groundingModes = input.terminologyGrounding ? [true, false] : [false];
+
+  for (const useGrounding of groundingModes) {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const body: Record<string, unknown> = {
+      contents: [
+        {
+          role: "user",
+          parts: [{ text: input.prompt }],
+        },
+      ],
+      generationConfig: {
+        temperature: 0.1,
+        responseMimeType: "application/json",
+      },
+    };
+
+    if (useGrounding) {
+      body.tools = [{ google_search: {} }];
+    }
 
     try {
       const response = await fetch(url, {
@@ -51,23 +71,16 @@ export async function generateGeminiJson(input: {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          contents: [
-            {
-              role: "user",
-              parts: [{ text: input.prompt }],
-            },
-          ],
-          generationConfig: {
-            temperature: 0.1,
-            responseMimeType: "application/json",
-          },
-        }),
+        body: JSON.stringify(body),
         signal: controller.signal,
       });
 
       if (!response.ok) {
         const retryable = response.status === 429 || response.status >= 500;
+
+        if (useGrounding && response.status === 400) {
+          break;
+        }
 
         if (retryable && attempt < MAX_RETRIES) {
           await wait(600 * 2 ** attempt);
@@ -91,6 +104,7 @@ export async function generateGeminiJson(input: {
     } finally {
       clearTimeout(timeout);
     }
+  }
   }
 
   throw new Error("Gemini answer generation failed.");

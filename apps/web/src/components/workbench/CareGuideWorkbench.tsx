@@ -6,6 +6,7 @@ import {
   type SourceRef,
 } from "./display-adapter";
 import { KnowledgeSection } from "./KnowledgeSection";
+import { LoadingState } from "./LoadingState";
 import { MedicationSection } from "./MedicationSection";
 import { QuestionComposer } from "./QuestionComposer";
 import { SourceDrawer } from "./SourceDrawer";
@@ -32,6 +33,32 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+function wait(ms: number) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+function loadingStage(progress: number) {
+  if (progress >= 96) {
+    return "已经整理好，正在打开结果。";
+  }
+
+  if (progress >= 78) {
+    return "正在把可查看的信息整理成用药卡片。";
+  }
+
+  if (progress >= 52) {
+    return "正在核对资料来源和原文出处。";
+  }
+
+  if (progress >= 24) {
+    return "正在检索本地资料库里的相关内容。";
+  }
+
+  return "正在接收你的问题。";
+}
+
 export function CareGuideWorkbench({
   initialQuestion = "",
 }: CareGuideWorkbenchProps) {
@@ -40,6 +67,9 @@ export function CareGuideWorkbench({
   const [coverage, setCoverage] = useState<KbCoverage | null>(null);
   const [result, setResult] = useState<QueryResponse | null>(null);
   const [loading, setLoading] = useState(hasInitialQuestion);
+  const [loadingProgress, setLoadingProgress] = useState(
+    hasInitialQuestion ? 12 : 0,
+  );
   const [error, setError] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sourceDetails, setSourceDetails] = useState<SourceDetail[] | null>(null);
@@ -86,6 +116,40 @@ export function CareGuideWorkbench({
     }
   }, [initialQuestion]);
 
+  useEffect(() => {
+    if (!loading) {
+      return;
+    }
+
+    setLoadingProgress((current) => (current > 0 ? current : 12));
+
+    const timer = window.setInterval(() => {
+      setLoadingProgress((current) => {
+        if (current >= 92) {
+          return current;
+        }
+
+        if (current < 28) {
+          return Math.min(28, current + 4);
+        }
+
+        if (current < 58) {
+          return Math.min(58, current + 5);
+        }
+
+        if (current < 82) {
+          return Math.min(82, current + 3);
+        }
+
+        return Math.min(92, current + 1);
+      });
+    }, 420);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [loading]);
+
   async function submitQuestion(input = question) {
     const trimmed = input.trim();
 
@@ -94,6 +158,7 @@ export function CareGuideWorkbench({
       return;
     }
 
+    setLoadingProgress(8);
     setLoading(true);
     setError(null);
 
@@ -105,9 +170,13 @@ export function CareGuideWorkbench({
           locale: "zh-CN",
         }),
       });
+      setLoadingProgress(100);
       setResult(data);
+      await wait(220);
     } catch {
+      setLoadingProgress(100);
       setError("暂时无法完成查询，请稍后重试。");
+      await wait(180);
     } finally {
       setLoading(false);
     }
@@ -189,16 +258,10 @@ export function CareGuideWorkbench({
         ) : null}
 
         {loading ? (
-          <div className="rounded-[30px] border border-care-line bg-care-paper p-6 shadow-care-soft">
-            <p className="text-base font-semibold text-care-ink">正在查询</p>
-            <p className="mt-2 text-sm text-care-muted">
-              正在核对本地资料，并整理可以直接查看的用药卡片。
-            </p>
-            <div className="mt-5 grid gap-3 md:grid-cols-2">
-              <div className="h-36 rounded-3xl bg-care-soft" />
-              <div className="h-36 rounded-3xl bg-care-soft" />
-            </div>
-          </div>
+          <LoadingState
+            progress={loadingProgress}
+            stage={loadingStage(loadingProgress)}
+          />
         ) : null}
 
         {!loading && result?.answer_status === "insufficient_evidence" ? (

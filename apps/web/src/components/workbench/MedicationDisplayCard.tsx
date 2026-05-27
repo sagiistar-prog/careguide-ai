@@ -76,6 +76,19 @@ export function MedicationDisplayCard({
           </div>
         ))}
       </dl>
+
+      {group.externalNotes.length > 0 ? (
+        <div className="mt-4 rounded-2xl border border-care-line bg-care-soft px-4 py-3">
+          <p className="text-sm font-semibold text-care-cocoa">外部检索补充</p>
+          <div className="mt-2 space-y-2">
+            {group.externalNotes.map((note) => (
+              <p key={note} className="text-sm leading-7 text-care-ink">
+                {note}
+              </p>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </article>
   );
 }

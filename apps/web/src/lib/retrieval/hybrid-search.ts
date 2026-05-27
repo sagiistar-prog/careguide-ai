@@ -7,9 +7,9 @@ import type { HybridSearchOptions, RetrievalDb } from "./types";
 import { vectorSearch, type VectorSearchConfig } from "./vector-search";
 
 const DEFAULT_OPTIONS = {
-  keywordTopK: 20,
-  vectorTopK: 20,
-  selectedTopK: 8,
+  keywordTopK: 36,
+  vectorTopK: 28,
+  selectedTopK: 14,
 };
 
 export async function hybridSearch(input: {

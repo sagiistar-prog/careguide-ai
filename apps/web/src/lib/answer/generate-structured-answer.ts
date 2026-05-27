@@ -7,6 +7,7 @@ import { applySafetyGuard } from "./safety-guard";
 import type {
   AnswerSentence,
   EvidenceCard,
+  ExternalSearchNote,
   GenerateAnswerInput,
   MedicationFields,
   StructuredAnswer,
@@ -115,6 +116,7 @@ function fallbackAnswer(input: {
         }),
       ],
       citations: [],
+      external_search_notes: [],
       rejected_claims: input.reason
         ? [{ text: input.reason, reason: "safe_generation_fallback" }]
         : [],
@@ -166,6 +168,7 @@ function fallbackAnswer(input: {
         ]
       : [],
     citations: input.evidencePackage.selected_evidence.map(fallbackCitation),
+    external_search_notes: [],
     rejected_claims: input.reason
       ? [{ text: input.reason, reason: "safe_generation_fallback" }]
       : [],
@@ -278,6 +281,7 @@ function normalizeMedicationFields(value: unknown): MedicationFields | undefined
     contraindications: stringField("contraindications"),
     cautions: stringField("cautions"),
     adverse_reactions: stringField("adverse_reactions"),
+    external_search_note: stringField("external_search_note"),
   };
 }
 
@@ -331,6 +335,46 @@ function normalizeAnswerStatus(value: unknown): StructuredAnswer["answer_status"
   return "answered_with_evidence";
 }
 
+function normalizeExternalSearchNotes(value: unknown): ExternalSearchNote[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .flatMap((item, index) => {
+      if (typeof item !== "object" || item === null) {
+        return [];
+      }
+
+      const record = item as Record<string, unknown>;
+      const text = typeof record.text === "string" ? record.text.trim() : "";
+
+      if (!text) {
+        return [];
+      }
+
+      return [
+        {
+          note_id:
+            typeof record.note_id === "string" && record.note_id.trim()
+              ? record.note_id
+              : `external_${index + 1}`,
+          text: text.length > 220 ? `${text.slice(0, 220).trim()}...` : text,
+          reason:
+            typeof record.reason === "string" && record.reason.trim()
+              ? record.reason
+              : "local_gap_fallback",
+          search_scope: "google_search_grounding" as const,
+          used_for:
+            record.used_for === "terminology_calibration"
+              ? ("terminology_calibration" as const)
+              : ("local_gap_fallback" as const),
+        },
+      ];
+    })
+    .slice(0, 3);
+}
+
 function normalizeGeminiAnswer(input: {
   jsonText: string;
   evidencePackage: EvidencePackage;
@@ -369,6 +413,9 @@ function normalizeGeminiAnswer(input: {
         }))
       : [],
     citations: input.evidencePackage.selected_evidence.map(fallbackCitation),
+    external_search_notes: normalizeExternalSearchNotes(
+      parsed.external_search_notes,
+    ),
     rejected_claims: Array.isArray(parsed.rejected_claims)
       ? parsed.rejected_claims.flatMap((item) => {
           if (typeof item !== "object" || item === null) {
@@ -402,6 +449,7 @@ export async function generateStructuredAnswer(input: GenerateAnswerInput) {
           apiKey: input.geminiApiKey,
           model: input.geminiModel,
           prompt: buildAnswerPrompt(input.evidencePackage),
+          terminologyGrounding: true,
         }));
       answer = normalizeGeminiAnswer({
         jsonText,

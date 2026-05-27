@@ -15,6 +15,7 @@ const REQUIRED_FILES = [
   "src/components/workbench/QuestionComposer.tsx",
   "src/components/workbench/MedicationSection.tsx",
   "src/components/workbench/MedicationDisplayCard.tsx",
+  "src/components/workbench/LoadingState.tsx",
   "src/components/workbench/KnowledgeSection.tsx",
   "src/components/workbench/SourceDrawer.tsx",
   "src/components/workbench/display-adapter.ts",
@@ -98,6 +99,9 @@ assert(
 );
 assert(uiText.includes("正在打开咨询台"), "Landing transition copy is missing.");
 assert(uiText.includes("consult-enter"), "Consult enter animation hook is missing.");
+assert(uiText.includes("progressbar"), "Consult loading progressbar is missing.");
+assert(uiText.includes("查询进度"), "Consult loading progress label is missing.");
+assert(uiText.includes("外部检索补充"), "Card-level external search supplement is missing.");
 
 console.log(
   JSON.stringify(

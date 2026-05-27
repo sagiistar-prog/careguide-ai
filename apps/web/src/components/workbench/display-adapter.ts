@@ -1,4 +1,4 @@
-import type { Citation, MedicationCardData, QueryResponse } from "./types";
+﻿import type { Citation, MedicationCardData, QueryResponse } from "./types";
 
 export type SourceRef = {
   chunkId: string;
@@ -18,6 +18,7 @@ export type MedicationGroup = {
     cautions: string;
     adverse: string;
   };
+  externalNotes: string[];
   confidence: "high" | "medium" | "low";
 };
 
@@ -162,6 +163,9 @@ const NON_MEDICINE_NAME_TERMS = [
   "原文",
   "资料",
   "说明",
+  "该卡片",
+  "本地资料",
+  "Google",
 ];
 
 const BOILERPLATE_PATTERNS = [
@@ -195,6 +199,13 @@ function cleanText(value: string | undefined) {
     (current, pattern) => current.replace(pattern, ""),
     withoutUnknown,
   )
+    .replace(/[】]+/g, "")
+    .replace(/\s+/g, " ")
+    .replace(/\s+([，。；：、])/g, "$1")
+    .replace(/([（(])\s+/g, "$1")
+    .replace(/\s+([）)])/g, "$1")
+    .replace(/(\d)\s+(mg|g|ml|mL|片|粒|丸|袋|次|日|小时)/gi, "$1$2")
+    .replace(/(\d)\s*；\s*(\d)/g, "$1.$2")
     .replace(/\s+/g, " ")
     .trim();
 
@@ -204,6 +215,110 @@ function cleanText(value: string | undefined) {
 function truncate(value: string, max = 380) {
   const text = cleanText(value);
   return text.length > max ? `${text.slice(0, max).trim()}...` : text;
+}
+
+function splitClauses(value: string) {
+  return cleanText(value)
+    .split(/[；;。.\n]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function normalizeClauseKey(value: string) {
+  return value
+    .replace(/[，,、：:（）()《》“”"'`·\s]/g, "")
+    .replace(/^(资料中提到|书中列出|说明书提示|可用于|适用于)/, "")
+    .trim();
+}
+
+function dedupeFieldValue(value: string, seen: Set<string>) {
+  if (!value || value === UNKNOWN) {
+    return value;
+  }
+
+  const kept: string[] = [];
+
+  for (const clause of splitClauses(value)) {
+    const key = normalizeClauseKey(clause);
+
+    if (!key || seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    kept.push(clause);
+  }
+
+  return kept.length > 0 ? truncate(kept.join("；")) : UNKNOWN;
+}
+
+function dedupeFields(fields: MedicationGroup["fields"]) {
+  const seen = new Set<string>();
+
+  return {
+    indication: dedupeFieldValue(fields.indication, seen),
+    dosage: dedupeFieldValue(fields.dosage, seen),
+    decoction: dedupeFieldValue(fields.decoction, seen),
+    contraindications: dedupeFieldValue(fields.contraindications, seen),
+    adverse: dedupeFieldValue(fields.adverse, seen),
+    cautions: dedupeFieldValue(fields.cautions, seen),
+  };
+}
+
+function safeExternalNote(value: string | undefined) {
+  const text = truncate(value ?? "", 160);
+
+  if (!text || text === UNKNOWN) {
+    return "";
+  }
+
+  return text.startsWith("本地资料未列出；Google 检索参考显示")
+    ? text
+    : `本地资料未列出；Google 检索参考显示：${text}`;
+}
+
+function unrelatedTopicLeak(value: string) {
+  return /伤口|咬伤|服毒|催吐|洗胃|导泻|中毒|静脉滴注|肌内注射|青霉素|头孢|地西泮|氯化钾|氯化钠/.test(
+    value,
+  );
+}
+
+function hasMultiplePrescriptionBlocks(value: string) {
+  const matches = value.match(/处方\s*[一二三四五六七八九十0-9]+/g) ?? [];
+
+  return new Set(matches).size > 1;
+}
+
+function hasTooManyMedicineMentions(value: string, currentName: string) {
+  const normalizedCurrent = normalizeName(currentName);
+  const medicineMentions = [
+    ...WESTERN_DRUGS.flatMap((drug) => [drug.chinese, drug.english]),
+    ...KNOWN_TCM_NAMES,
+  ].filter((name) => value.includes(name) && !normalizedCurrent.includes(name));
+
+  return new Set(medicineMentions).size > 2;
+}
+
+function safeStructuredField(input: {
+  value: string | undefined;
+  currentName: string;
+  maxLength?: number;
+}) {
+  const text = truncate(input.value ?? "", input.maxLength ?? 180);
+
+  if (!text || text === UNKNOWN) {
+    return UNKNOWN;
+  }
+
+  if (
+    hasMultiplePrescriptionBlocks(text) ||
+    hasTooManyMedicineMentions(text, input.currentName) ||
+    unrelatedTopicLeak(text)
+  ) {
+    return UNKNOWN;
+  }
+
+  return text;
 }
 
 export function translateMedicalTerms(value: string) {
@@ -241,6 +356,7 @@ function bundleFor(card: MedicationCardData, citations: Citation[]) {
     ...citations.map((citation) => citation.document_title),
     ...citations.map((citation) => citation.section_name),
     ...citations.map((citation) => citation.book_title ?? ""),
+    ...citations.map((citation) => citation.source_type ?? ""),
   ].join(" ");
 }
 
@@ -257,6 +373,10 @@ function sourceTextFor(card: MedicationCardData) {
 }
 
 function westernNames(bundle: string) {
+  if (!/openfda|dailymed|drug_label|warnings|dosage|indications|contraindications|adverse/i.test(bundle)) {
+    return [];
+  }
+
   return WESTERN_DRUGS.flatMap((drug) => {
     const matched = [drug.english, drug.chinese, ...drug.aliases].some((name) =>
       new RegExp(escapeRegExp(name), "i").test(bundle),
@@ -288,10 +408,45 @@ function isInvalidMedicationName(name: string) {
     NON_MEDICINE_NAME_TERMS.some((term) => normalized.includes(term)) ||
     /^[不未无非没]/.test(normalized) ||
     /[，。；：、]/.test(normalized) ||
-    ["口服液", "颗粒", "胶囊", "用法", "用量", "注意事项", UNKNOWN].includes(
+    ["口服液", "颗粒", "胶囊", "用法", "用量", "注意事项", "该卡片", UNKNOWN].includes(
       normalized,
     )
   );
+}
+
+function isDrugLabelEvidence(citations: Citation[]) {
+  return citations.some((citation) =>
+    ["drug_label", "drug_label_candidate"].includes(citation.source_type ?? ""),
+  );
+}
+
+function isMedicalBookEvidence(citations: Citation[]) {
+  return citations.some((citation) => citation.source_type === "medical_book");
+}
+
+function prescriptionTitleFrom(text: string) {
+  const source = cleanText(text);
+  const match = source.match(/(处方\s*[一二三四五六七八九十0-9]+)\s*([^，。；:：\n]{0,16})/);
+
+  if (!match) {
+    return "";
+  }
+
+  const suffix = cleanText(match[2] ?? "")
+    .replace(/^(用于|适用于)/, "")
+    .trim();
+
+  return suffix ? `${match[1]}：${suffix}` : match[1];
+}
+
+function prescriptionCategory(text: string) {
+  const source = cleanText(text);
+
+  if (/静脉|肌内|注射液|mg|ml|青霉素|头孢|布洛芬|阿司匹林|对乙酰氨基酚/i.test(source)) {
+    return "western" as const;
+  }
+
+  return "tcm" as const;
 }
 
 function appearsInEvidence(name: string, card: MedicationCardData, citations: Citation[]) {
@@ -315,10 +470,9 @@ function appearsInEvidence(name: string, card: MedicationCardData, citations: Ci
 
 function tcmNames(bundle: string) {
   const knownMatches = KNOWN_TCM_NAMES.filter((name) => bundle.includes(name));
-  const patternMatches = [
-    ...(bundle.match(TCM_NAME_PATTERN) ?? []),
-    ...(bundle.match(PRESCRIPTION_NAME_PATTERN) ?? []),
-  ].map(normalizeName);
+  const patternMatches = [...(bundle.match(PRESCRIPTION_NAME_PATTERN) ?? [])].map(
+    normalizeName,
+  );
 
   return unique([...knownMatches, ...patternMatches])
     .filter((name) => !isInvalidMedicationName(name))
@@ -495,53 +649,69 @@ function fieldFor(card: MedicationCardData, citations: Citation[]) {
   return "cautions" as const;
 }
 
-function fieldText(card: MedicationCardData, citations: Citation[]) {
+function fieldText(card: MedicationCardData, citations: Citation[], name: string) {
   const text = sourceTextFor(card);
   const fallbackField = fieldFor(card, citations);
   const structured = card.medication_fields;
   const structuredField = (value: string | undefined) => {
-    const cleaned = truncate(value ?? "");
+    const cleaned = safeStructuredField({
+      value,
+      currentName: name,
+    });
 
     return cleaned && cleaned !== UNKNOWN ? cleaned : "";
   };
+  const allowFallbackExtraction = !structured;
   const fields = {
     indication:
       structuredField(structured?.indication) ||
-      extractLabeledField(text, ["适应症", "证型", "适用范围", "适用于", "主治"]) ||
-      extractSentences(text, ["适用于", "适应症", "用于", "主治", "治疗", "症见", "证见", "主要治疗", "缓解"]) ||
+      (allowFallbackExtraction
+        ? extractLabeledField(text, ["适应症", "证型", "适用范围", "适用于", "主治"]) ||
+          extractSentences(text, ["适用于", "适应症", "用于", "主治", "治疗", "症见", "证见", "主要治疗", "缓解"])
+        : "") ||
       UNKNOWN,
     dosage:
       structuredField(structured?.dosage) ||
-      extractLabeledField(text, ["用量用法", "用法用量", "用法", "用量"]) ||
-      extractSentences(text, ["用法", "用量", "口服", "每次", "每日", "一日", "一次", "mg", "ml", "片", "粒", "丸", "袋", "疗程"]) ||
+      (allowFallbackExtraction
+        ? extractLabeledField(text, ["用量用法", "用法用量", "用法", "用量"]) ||
+          extractSentences(text, ["用法", "用量", "口服", "每次", "每日", "一日", "一次", "mg", "ml", "片", "粒", "丸", "袋", "疗程"])
+        : "") ||
       UNKNOWN,
     decoction:
       structuredField(structured?.decoction) ||
-      extractLabeledField(text, ["煎法", "做法", "服法"]) ||
-      extractSentences(text, ["煎服", "水煎", "冲服", "外用", "煎煮", "开水冲服", "温水"]) ||
+      (allowFallbackExtraction
+        ? extractLabeledField(text, ["煎法", "做法", "服法"]) ||
+          extractSentences(text, ["煎服", "水煎", "冲服", "外用", "煎煮", "开水冲服", "温水"])
+        : "") ||
       UNKNOWN,
     contraindications:
       structuredField(structured?.contraindications) ||
-      extractLabeledField(text, ["禁忌", "不宜"]) ||
-      extractSentences(text, ["禁忌", "不宜", "禁用", "忌", "过敏"]) ||
+      (allowFallbackExtraction
+        ? extractLabeledField(text, ["禁忌", "不宜"]) ||
+          extractSentences(text, ["禁忌", "不宜", "禁用", "忌", "过敏"])
+        : "") ||
       UNKNOWN,
     cautions:
       structuredField(structured?.cautions) ||
-      extractLabeledField(text, ["注意事项", "慎用", "注意"]) ||
-      extractSentences(text, ["注意", "慎用", "观察", "若", "如果", "避免", "不确定"]) ||
+      (allowFallbackExtraction
+        ? extractLabeledField(text, ["注意事项", "慎用", "注意"]) ||
+          extractSentences(text, ["注意", "慎用", "观察", "若", "如果", "避免", "不确定"])
+        : "") ||
       UNKNOWN,
     adverse:
       structuredField(structured?.adverse_reactions) ||
-      extractLabeledField(text, ["不良反应", "副作用"]) ||
-      extractSentences(text, ["不良反应", "副作用", "恶心", "呕吐", "腹泻", "皮疹", "头痛", "眩晕"]) ||
+      (allowFallbackExtraction
+        ? extractLabeledField(text, ["不良反应", "副作用"]) ||
+          extractSentences(text, ["不良反应", "副作用", "恶心", "呕吐", "腹泻", "皮疹", "头痛", "眩晕"])
+        : "") ||
       UNKNOWN,
   };
 
-  if (fields[fallbackField] === UNKNOWN && text) {
+  if (allowFallbackExtraction && fields[fallbackField] === UNKNOWN && text) {
     fields[fallbackField] = truncate(text);
   }
 
-  return fields;
+  return dedupeFields(fields);
 }
 
 function mergeField(current: string, next: string) {
@@ -619,9 +789,10 @@ function addMedicationGroup(
         cautions: UNKNOWN,
         adverse: UNKNOWN,
       },
+      externalNotes: [],
       confidence: input.card.confidence,
     } satisfies MedicationGroup);
-  const fields = fieldText(input.card, input.citations);
+  const fields = fieldText(input.card, input.citations, group.name);
 
   group.fields.indication = mergeField(group.fields.indication, fields.indication);
   group.fields.dosage = mergeField(group.fields.dosage, fields.dosage);
@@ -634,6 +805,12 @@ function addMedicationGroup(
 
   if (input.category === "tcm") {
     group.fields.decoction = mergeField(group.fields.decoction, fields.decoction);
+  }
+
+  const externalNote = safeExternalNote(input.card.medication_fields?.external_search_note);
+
+  if (externalNote && !group.externalNotes.includes(externalNote)) {
+    group.externalNotes = [...group.externalNotes, externalNote].slice(0, 2);
   }
 
   group.sourceRefs = uniqueSourceRefs([...group.sourceRefs, ...sourceRefs(input.card)]);
@@ -689,3 +866,6 @@ export function buildMedicationDisplay(result: QueryResponse): MedicationDisplay
     knowledge: Array.from(knowledge.values()).slice(0, 5),
   };
 }
+
+
+

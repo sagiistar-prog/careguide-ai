@@ -68,6 +68,9 @@ function shouldPreferDrugLabel(query: NormalizedQuery) {
   return (
     query.detected_drugs.length > 0 ||
     query.detected_population.length > 0 ||
+    query.expanded_terms.some((term) =>
+      ["acetaminophen", "paracetamol", "ibuprofen"].includes(term.toLowerCase()),
+    ) ||
     query.risk_terms.some((term) =>
       ["warnings", "contraindications", "adverse_reactions", "dosage"].includes(term),
     )

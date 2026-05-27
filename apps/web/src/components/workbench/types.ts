@@ -52,6 +52,7 @@ export type MedicationCardData = {
     contraindications?: string;
     cautions?: string;
     adverse_reactions?: string;
+    external_search_note?: string;
   };
 };
 
@@ -91,6 +92,13 @@ export type QueryResponse = {
   questions_for_doctor_or_pharmacist: AnswerSentence[];
   limitations: AnswerSentence[];
   citations: Citation[];
+  external_search_notes?: Array<{
+    note_id: string;
+    text: string;
+    reason: string;
+    search_scope: "google_search_grounding";
+    used_for: "terminology_calibration" | "local_gap_fallback";
+  }>;
   rejected_claims_count: number;
   citation_coverage: number;
   created_at: string;

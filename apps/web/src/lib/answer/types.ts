@@ -54,6 +54,7 @@ export type MedicationFields = {
   contraindications?: string;
   cautions?: string;
   adverse_reactions?: string;
+  external_search_note?: string;
 };
 
 export type EvidenceCard = {
@@ -87,6 +88,14 @@ export type RejectedClaim = {
   reason: string;
 };
 
+export type ExternalSearchNote = {
+  note_id: string;
+  text: string;
+  reason: string;
+  search_scope: "google_search_grounding";
+  used_for: "terminology_calibration" | "local_gap_fallback";
+};
+
 export type StructuredAnswer = {
   answer_id: string;
   evidence_package_id: string;
@@ -98,6 +107,7 @@ export type StructuredAnswer = {
   questions_for_doctor_or_pharmacist: AnswerSentence[];
   limitations: AnswerSentence[];
   citations: CitationRecord[];
+  external_search_notes: ExternalSearchNote[];
   rejected_claims: RejectedClaim[];
 };
 

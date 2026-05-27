@@ -49,6 +49,16 @@ export function safeAnswerResponse(input: {
         location: evidence?.location,
       };
     }),
+    external_search_notes: answer.external_search_notes
+      .filter((note) => note.text.trim().length > 0)
+      .slice(0, 3)
+      .map((note) => ({
+        ...note,
+        text:
+          note.text.length > 220
+            ? `${note.text.slice(0, 220).trim()}...`
+            : note.text,
+      })),
     rejected_claims_count: answer.rejected_claims.length,
     citation_coverage: Math.round(input.validation.citation_coverage * 100),
     created_at: new Date().toISOString(),
