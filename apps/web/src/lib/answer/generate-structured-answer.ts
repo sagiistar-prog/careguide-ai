@@ -73,6 +73,91 @@ function cardType(sectionName: string): EvidenceCard["card_type"] {
   return "patient_education";
 }
 
+const FALLBACK_WESTERN_DRUGS = [
+  {
+    english: "ibuprofen",
+    chinese: "布洛芬",
+    aliases: ["Ibuprofen Dye Free", "care one ibuprofen"],
+  },
+  {
+    english: "acetaminophen",
+    chinese: "对乙酰氨基酚",
+    aliases: ["paracetamol", "Pain Reliever", "basic care acetaminophen"],
+  },
+  {
+    english: "metformin",
+    chinese: "二甲双胍",
+    aliases: ["Metformin Hydrochloride", "ZITUVIMET"],
+  },
+  {
+    english: "amlodipine",
+    chinese: "氨氯地平",
+    aliases: ["Amlodipine Besylate"],
+  },
+  {
+    english: "lisinopril",
+    chinese: "赖诺普利",
+    aliases: ["Lisinopril and Hydrochlorothiazide"],
+  },
+] as const;
+
+function compactFallbackText(value: string, max = 240) {
+  const compacted = value.replace(/\s+/g, " ").trim();
+
+  return compacted.length > max ? `${compacted.slice(0, max).trim()}...` : compacted;
+}
+
+function fallbackWesternMedicineName(item: SelectedEvidence) {
+  if (!["drug_label", "drug_label_candidate"].includes(item.source_type)) {
+    return "";
+  }
+
+  const haystack = `${item.document_title} ${item.section_name} ${item.source_excerpt}`.toLowerCase();
+  const match = FALLBACK_WESTERN_DRUGS.find((drug) =>
+    [drug.english, drug.chinese, ...drug.aliases].some((name) =>
+      haystack.includes(name.toLowerCase()),
+    ),
+  );
+
+  return match ? `${match.chinese}（${match.english}）` : "";
+}
+
+function fallbackMedicationFields(item: SelectedEvidence): MedicationFields | undefined {
+  const medicineName = fallbackWesternMedicineName(item);
+
+  if (!medicineName) {
+    return undefined;
+  }
+
+  const section = `${item.section_key} ${item.section_name}`.toLowerCase();
+  const text = compactFallbackText(item.source_excerpt);
+  const fields: MedicationFields = {
+    medicine_name: medicineName,
+    medicine_category: "western",
+    indication: "本地资料未列出",
+    dosage: "本地资料未列出",
+    decoction: "本地资料未列出",
+    contraindications: "本地资料未列出",
+    cautions: "本地资料未列出",
+    adverse_reactions: "本地资料未列出",
+    external_search_note: "",
+  };
+
+  if (/indications|usage|uses/.test(section)) {
+    fields.indication = text;
+  } else if (/dosage|dose|administration/.test(section)) {
+    fields.dosage = text;
+  } else if (/contraindication/.test(section)) {
+    fields.contraindications = text;
+  } else if (/adverse|side effects/.test(section)) {
+    fields.adverse_reactions = text;
+  } else if (/warning|precaution|boxed/.test(section)) {
+    fields.cautions = text;
+  }
+
+  return fields;
+}
+
 function fallbackAnswer(input: {
   evidencePackage: EvidencePackage;
   reason?: string;
@@ -137,7 +222,7 @@ function fallbackAnswer(input: {
       }),
     ],
     evidence_cards: input.evidencePackage.selected_evidence
-      .slice(0, 4)
+      .slice(0, 8)
       .map((item) => ({
         card_type: cardType(item.section_name),
         title: `${item.document_title} - ${item.section_name}`,
@@ -149,6 +234,7 @@ function fallbackAnswer(input: {
         confidence: "medium" as const,
         applicability: "仅适用于该来源片段描述的药品、章节和人群。",
         not_applicable_when: "药品、人群、症状或风险情境不一致时，需要医生或药师确认。",
+        medication_fields: fallbackMedicationFields(item),
       })),
     safety_notices: [],
     questions_for_doctor_or_pharmacist: [

@@ -106,6 +106,10 @@ export async function generateGeminiJson(input: {
         continue;
       }
 
+      if (useGrounding) {
+        break;
+      }
+
       throw error;
     } finally {
       clearTimeout(timeout);

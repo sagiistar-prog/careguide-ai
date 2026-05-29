@@ -165,7 +165,7 @@ const pollutedResult: QueryResponse = {
         indication: "风寒感冒；伤口处理",
         cautions: "】服毒后催吐、洗胃",
         external_search_note:
-          "本地资料未列出；Google 检索参考显示：常见资料会把适应症、禁忌、注意事项分栏描述；广告购买信息",
+          "本地资料未列出；联网搜索结果可得：常见资料会把适应症、禁忌、注意事项分栏描述；广告购买信息",
       },
     },
   ],
@@ -220,6 +220,7 @@ const visibleMedicationText = [
 assert(!visibleMedicationText.includes("该卡片"), "Fake medicine name leaked.");
 assert(!/蛇咬伤|咬伤|伤口|服毒|催吐|洗胃|source_id|chunk_id|】/.test(visibleMedicationText), "Polluted medication text leaked.");
 assert(visibleMedicationText.includes("0.2g"), "Dose punctuation normalization failed.");
+assert(visibleMedicationText.includes("联网搜索结果可得"), "External supplement wording is missing.");
 
 console.log(
   JSON.stringify(

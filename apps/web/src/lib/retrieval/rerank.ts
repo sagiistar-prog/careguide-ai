@@ -77,6 +77,26 @@ function shouldPreferDrugLabel(query: NormalizedQuery) {
   );
 }
 
+function wantsWesternPainRelief(query: NormalizedQuery) {
+  return (
+    query.detected_symptoms.some((term) =>
+      ["头痛", "头疼", "疼痛", "止痛", "痛经", "经痛"].includes(term),
+    ) ||
+    query.expanded_terms.some((term) =>
+      [
+        "pain",
+        "headache",
+        "menstrual cramps",
+        "period pain",
+        "dysmenorrhea",
+        "ibuprofen",
+        "acetaminophen",
+        "paracetamol",
+      ].includes(term.toLowerCase()),
+    )
+  );
+}
+
 function wantsMedicationCard(query: NormalizedQuery) {
   return ["find_medicine", "dosage", "prescription"].includes(query.question_type);
 }
@@ -286,6 +306,19 @@ export function rerankEvidence(input: {
     }
 
     if (
+      wantsWesternPainRelief(input.query) &&
+      ["drug_label", "drug_label_candidate"].includes(candidate.source_type)
+    ) {
+      score += 0.18;
+      why.push("western_pain_relief_label_priority");
+
+      if (sectionMatches(candidate, ["patient_education"]) || /indications|usage|uses/i.test(`${candidate.section_key} ${candidate.section_name}`)) {
+        score += 0.12;
+        why.push("pain_relief_indication_section_priority");
+      }
+    }
+
+    if (
       input.query.medication_preference === "western" &&
       ["drug_label", "drug_label_candidate"].includes(candidate.source_type)
     ) {
@@ -352,6 +385,29 @@ export function rerankEvidence(input: {
     if (topNonBook && !hasNonBook) {
       selected[selected.length === input.selectedTopK ? selected.length - 1 : selected.length] =
         topNonBook;
+    }
+  }
+
+  if (wantsWesternPainRelief(input.query)) {
+    const selectedIds = new Set(selected.map((candidate) => candidate.chunk_id));
+    const painLabelCandidates = sorted.filter(
+      (candidate) =>
+        ["drug_label", "drug_label_candidate"].includes(candidate.source_type) &&
+        !selectedIds.has(candidate.chunk_id),
+    );
+
+    for (const candidate of painLabelCandidates.slice(0, 4)) {
+      selectedIds.add(candidate.chunk_id);
+
+      if (selected.length < input.selectedTopK) {
+        selected.push(candidate);
+      } else {
+        const replaceIndex = selected.findIndex(
+          (item) => item.source_type === "medical_book" && looksLikeDiseaseKnowledge(item),
+        );
+
+        selected[replaceIndex >= 0 ? replaceIndex : selected.length - 1] = candidate;
+      }
     }
   }
 

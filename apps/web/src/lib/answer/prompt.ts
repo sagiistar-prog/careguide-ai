@@ -68,10 +68,10 @@ Hard rules:
 - Use grounding for correspondence checking, not for filling content. If grounding suggests the selected_evidence may have copied across a page, crossed adjacent entries, or attached another medicine's explanation, set the questionable field to "本地资料未列出" rather than guessing.
 - If a medicine-field pair fails correspondence checking, discard that pair and search the other selected_evidence items for a better local match for the same medicine or symptom. If a better local match exists, use that local match with its own citation_ids. If no local match exists, do not create a misleading card for that medicine.
 - When grounding confirms only terminology or correspondence, do not cite the web result and do not mention the web result to the user. The user-facing citation must still be the local selected_evidence only.
-- If no trustworthy local match is found after searching selected_evidence, you may add at most 1-3 external_search_notes. Each note must start from "本地资料未列出；Google 检索参考显示" and must be a short synthesized medical/pharmacy-related summary, not a list of search results.
+- If no trustworthy local match is found after searching selected_evidence, you may add at most 1-3 external_search_notes. Each note must start from "本地资料未列出；联网搜索结果可得" and must be a short synthesized medical/pharmacy-related summary, not a list of search results.
 - external_search_notes must exclude ads, SEO text, site navigation, unrelated biography, marketplace content, and anything unrelated to medication, medicine names, symptoms, indication wording, contraindication wording, caution wording, dosage wording, adverse-reaction wording, or pharmacy terminology.
 - external_search_notes do not count as citations and must not be used to populate medication_fields.
-- For card-specific Google fallback, put 1-3 concise key points in medication_fields.external_search_note, separated by "；". Each point must be directly related to the card's medicine name, indication wording, dosage wording, contraindication wording, caution wording, or adverse-reaction wording. It must start from "本地资料未列出；Google 检索参考显示" and stay under 120 Chinese characters total when possible.
+- For card-specific Google fallback, put 1-3 concise key points in medication_fields.external_search_note, separated by "；". Each point must be directly related to the card's medicine name, indication wording, dosage wording, contraindication wording, caution wording, or adverse-reaction wording. It must start from "本地资料未列出；联网搜索结果可得" and stay under 120 Chinese characters total when possible.
 - medication_fields.external_search_note is shown inside the card after local fields. It must not replace indication, dosage, contraindications, cautions, or adverse_reactions.
 - Do not repeat card fields in medication_fields.external_search_note. Only add non-duplicative external summaries when they help interpret a local gap.
 - Prefer medication_fields.external_search_note for medicine-specific supplements. Use top-level external_search_notes only for broad query-level gaps that do not belong to one medicine card.
@@ -99,7 +99,8 @@ Medication-card priority:
 - If selected_evidence does not contain a field, set that field to "本地资料未列出".
 - If a field is missing, write "本地资料未列出" for that field instead of inventing.
 - If both medical_book and drug_label evidence are present, keep them visibly separate: medical_book is a general reference or prescription-book pattern; drug_label is label-based warning, dose, contraindication, or adverse-reaction information.
-- If the query is a symptom question and selected_evidence contains both western drug label evidence and medical_book evidence, create both western and tcm medication cards when supported. For headache, pain, fever, or cold-related questions, do not omit acetaminophen/paracetamol or ibuprofen cards when selected_evidence contains them.
+- If the query is a symptom question and selected_evidence contains both western drug label evidence and medical_book evidence, create both western and tcm medication cards when supported. For headache, dysmenorrhea/痛经, menstrual cramps, pain, fever, or cold-related questions, do not omit acetaminophen/paracetamol or ibuprofen cards when selected_evidence contains them.
+- For dysmenorrhea/痛经 questions, if selected_evidence contains ibuprofen, acetaminophen, or paracetamol drug_label evidence, create western medicine cards for those label-backed medicines before any Chinese patent medicine or disease-knowledge cards. Use local label fields where present; put any web-grounded non-duplicative gap summary only in medication_fields.external_search_note.
 - If selected_evidence contains a table or list with multiple medicine rows, create one evidence_card per concrete medicine, formula, or prescription row. Do not collapse multiple book rows into one generic book card.
 - For book tables, keep row alignment: medicine_name, indication, cautions, contraindications, and dosage must come from the same row, same paragraph, or clearly connected adjacent text in selected_evidence.
 - For cross-page book tables, do not pair a medicine name with the next visible indication or caution just because they are nearby. Only pair them when the excerpt shows that the table row continues or when selected_evidence includes both sides of that row.
@@ -167,7 +168,7 @@ Required JSON shape:
         "contraindications": "本地资料未列出",
         "cautions": "本地资料未列出",
         "adverse_reactions": "本地资料未列出",
-        "external_search_note": ""
+        "external_search_note": "本地资料未列出；联网搜索结果可得：..."
       }
     }
   ],

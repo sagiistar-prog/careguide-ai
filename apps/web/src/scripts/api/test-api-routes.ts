@@ -74,6 +74,16 @@ function assertCleanVisibleCards(result: QueryResponse) {
       `Main medication card contains polluted visible text: ${group.name}`,
     );
   }
+
+  if (/痛经|经痛/.test(result.query)) {
+    assert(display.western.length > 0, "Pain query did not surface western cards.");
+    assert(
+      display.western.some((group) =>
+        Object.values(group.fields).some((field) => field !== "本地资料未列出"),
+      ),
+      "Pain query western cards contain no field detail.",
+    );
+  }
 }
 
 async function main() {
@@ -112,6 +122,17 @@ async function main() {
     "Headache query citation coverage is not 100.",
   );
   assertCleanVisibleCards(headache.json as QueryResponse);
+
+  const periodPain = await postQueryJson({
+    query: "痛经怎么办",
+    locale: "zh-CN",
+  });
+  assert(periodPain.status === 200, "Period pain query did not return 200.");
+  assert(
+    citationCoverage(periodPain.json) === 100,
+    "Period pain query citation coverage is not 100.",
+  );
+  assertCleanVisibleCards(periodPain.json as QueryResponse);
 
   const highRisk = await postQueryJson({
     query: "我现在胸痛还呼吸困难，可以吃布洛芬吗？",
@@ -155,6 +176,7 @@ async function main() {
     ordinary.json,
     coldTcm.json,
     headache.json,
+    periodPain.json,
     highRisk.json,
     unknown.json,
     empty.json,
@@ -223,11 +245,13 @@ async function main() {
         ordinary_status: ordinary.json.answer_status,
         cold_tcm_status: coldTcm.json.answer_status,
         headache_status: headache.json.answer_status,
+        period_pain_status: periodPain.json.answer_status,
         high_risk_status: highRisk.json.answer_status,
         unknown_status: unknown.json.answer_status,
         ordinary_citation_coverage: ordinary.json.citation_coverage,
         cold_tcm_citation_coverage: coldTcm.json.citation_coverage,
         headache_citation_coverage: headache.json.citation_coverage,
+        period_pain_citation_coverage: periodPain.json.citation_coverage,
         high_risk_citation_coverage: highRisk.json.citation_coverage,
         unknown_citation_coverage: unknown.json.citation_coverage,
         empty_query_status: empty.status,

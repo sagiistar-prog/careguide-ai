@@ -72,12 +72,38 @@ function buildChineseBookPatterns(query: NormalizedQuery) {
     return [];
   }
 
+  const genericBookTerms = new Set([
+    "中成药",
+    "中药",
+    "处方",
+    "适用于",
+    "适应症",
+    "用法",
+    "用量",
+    "注意",
+    "禁忌",
+    "慎用",
+  ]);
+  const exactTopicTerms = [
+    ...query.book_query_terms.common_disease_terms,
+    ...query.book_query_terms.tcm_pattern_terms,
+    ...query.detected_symptoms,
+  ];
+  const expandedTerms =
+    exactTopicTerms.length > 0
+      ? query.expanded_terms.filter((term) => !genericBookTerms.has(term))
+      : query.expanded_terms;
+
   return toLikePatterns([
     ...query.book_query_terms.common_disease_terms,
     ...query.book_query_terms.tcm_pattern_terms,
-    ...query.book_query_terms.book_intent_terms,
-    ...query.book_query_terms.prescription_structure_terms,
-    ...query.expanded_terms,
+    ...query.book_query_terms.book_intent_terms.filter(
+      (term) => exactTopicTerms.length === 0 || !genericBookTerms.has(term),
+    ),
+    ...query.book_query_terms.prescription_structure_terms.filter(
+      (term) => exactTopicTerms.length === 0 || !genericBookTerms.has(term),
+    ),
+    ...expandedTerms,
     ...(query.medication_preference === "tcm" ? MEDICINE_FORM_TERMS : []),
   ]).slice(0, 32);
 }
@@ -111,8 +137,12 @@ function buildMedicineCandidatePatterns(query: NormalizedQuery) {
     );
   }
 
-  if (query.detected_symptoms.some((term) => ["头痛", "头疼", "疼痛", "止痛", "痛经", "经痛"].includes(term))) {
+  if (query.detected_symptoms.some((term) => ["头痛", "头疼", "疼痛", "止痛"].includes(term))) {
     symptomSpecific.push("布洛芬", "对乙酰氨基酚", "元胡止痛片", "少腹逐瘀颗粒");
+  }
+
+  if (query.detected_symptoms.some((term) => ["痛经", "经痛"].includes(term))) {
+    symptomSpecific.push("布洛芬", "对乙酰氨基酚", "月经痛", "痛经", "经期疼痛");
   }
 
   if (query.detected_symptoms.some((term) => ["胃痛", "腹痛", "肚子痛"].includes(term))) {

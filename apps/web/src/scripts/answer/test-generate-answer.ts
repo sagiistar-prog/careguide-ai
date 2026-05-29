@@ -55,6 +55,16 @@ function assertCleanMedicationDisplay(result: QueryResponse) {
 
     assert(group.name !== "该卡片", `出现假药名“该卡片”：${result.query}`);
   }
+
+  if (/痛经|经痛/.test(result.query)) {
+    assert(display.western.length > 0, `痛经查询没有展示西药卡：${result.query}`);
+    assert(
+      display.western.some((group) =>
+        Object.values(group.fields).some((field) => field !== "本地资料未列出"),
+      ),
+      `痛经查询西药卡字段全部为空：${result.query}`,
+    );
+  }
 }
 
 async function main() {

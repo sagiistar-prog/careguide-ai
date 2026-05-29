@@ -76,6 +76,28 @@ const SECTION_LABELS: Record<string, string> = {
   "Pediatric Use": "儿童用药",
 };
 
+const ENGLISH_PHRASE_LABELS: Record<string, string> = {
+  "Uses": "用途",
+  "Warnings": "警示",
+  "temporarily relieves minor aches and pains due to": "暂时缓解以下原因引起的轻微疼痛",
+  "premenstrual and menstrual cramps": "经前及经期疼痛",
+  "menstrual cramps": "经期疼痛",
+  "temporarily reduces fever": "暂时退热",
+  "headache": "头痛",
+  "toothache": "牙痛",
+  "backache": "背痛",
+  "muscular aches": "肌肉酸痛",
+  "minor pain of arthritis": "关节炎轻微疼痛",
+  "the common cold": "普通感冒",
+  "common cold": "普通感冒",
+  "Allergy alert": "过敏警示",
+  "Liver warning": "肝脏警示",
+  "Stomach bleeding warning": "胃出血警示",
+  "ask a doctor": "询问医生",
+  "ask a doctor or pharmacist": "询问医生或药师",
+  "severe allergic reaction": "严重过敏反应",
+};
+
 const KNOWN_TCM_NAMES = [
   "抗病毒口服液",
   "感冒清热颗粒",
@@ -321,7 +343,7 @@ function safeExternalNotes(
   }
 
   const withoutPrefix = text.replace(
-    /^本地资料未列出；Google 检索参考显示[:：]?/,
+    /^本地资料未列出；(?:Google 检索参考显示|联网搜索结果可得)[:：]?/,
     "",
   );
   const existingFieldKeys = fieldClauseKeys(fields);
@@ -336,7 +358,7 @@ function safeExternalNotes(
     .slice(0, 3);
 
   return clauses.map(
-    (clause) => `本地资料未列出；Google 检索参考显示：${truncate(clause, 90)}`,
+    (clause) => `本地资料未列出；联网搜索结果可得：${truncate(clause, 90)}`,
   );
 }
 
@@ -393,13 +415,33 @@ export function translateMedicalTerms(value: string) {
     text = text.replace(new RegExp(escapeRegExp(english), "gi"), chinese);
   }
 
+  for (const [english, chinese] of Object.entries(ENGLISH_PHRASE_LABELS)) {
+    text = text.replace(new RegExp(escapeRegExp(english), "gi"), chinese);
+  }
+
   for (const item of WESTERN_DRUGS) {
     for (const name of [item.english, ...item.aliases]) {
       text = text.replace(
-        new RegExp(`\\b${escapeRegExp(name)}\\b`, "gi"),
-        `${item.chinese}（${item.english}）`,
+        new RegExp(`(^|[^（\\w])(${escapeRegExp(name)})(?!）)`, "gi"),
+        `$1${item.chinese}（${item.english}）`,
       );
     }
+
+    const nestedStart = new RegExp(
+      `${escapeRegExp(item.chinese)}（${escapeRegExp(item.chinese)}（`,
+      "g",
+    );
+    const extraClose = new RegExp(
+      `(${escapeRegExp(item.chinese)}（${escapeRegExp(item.english)}）)）+`,
+      "gi",
+    );
+
+    while (nestedStart.test(text)) {
+      text = text.replace(nestedStart, `${item.chinese}（`);
+      nestedStart.lastIndex = 0;
+    }
+
+    text = text.replace(extraClose, "$1");
   }
 
   return text;
@@ -554,6 +596,56 @@ function wantsWestern(query: string) {
   );
 }
 
+function queryTopicTerms(query: string) {
+  const groups = [
+    {
+      triggers: ["痛经", "经痛", "月经痛", "经期疼痛"],
+      terms: ["痛经", "经痛", "月经", "经期", "小腹", "少腹", "痛经"],
+    },
+    {
+      triggers: ["头痛", "头疼"],
+      terms: ["头痛", "头疼", "头部", "头晕", "川芎茶调", "疼痛"],
+    },
+    {
+      triggers: ["感冒", "风寒", "风热"],
+      terms: ["感冒", "风寒", "风热", "恶寒", "发热", "流涕", "鼻塞"],
+    },
+    {
+      triggers: ["发烧", "发热"],
+      terms: ["发烧", "发热", "退热", "解热", "热"],
+    },
+    {
+      triggers: ["腹痛", "肚子痛", "胃痛"],
+      terms: ["腹痛", "肚子痛", "胃痛", "胃脘", "腹部"],
+    },
+    {
+      triggers: ["咳嗽"],
+      terms: ["咳嗽", "咳", "痰", "咽"],
+    },
+  ];
+
+  return unique(
+    groups.flatMap((group) =>
+      group.triggers.some((trigger) => query.includes(trigger)) ? group.terms : [],
+    ),
+  );
+}
+
+function cardMatchesQueryTopic(
+  card: MedicationCardData,
+  citations: Citation[],
+  query: string,
+) {
+  const terms = queryTopicTerms(query);
+
+  if (terms.length === 0) {
+    return true;
+  }
+
+  const text = cleanText(bundleFor(card, citations));
+  return terms.some((term) => text.includes(term));
+}
+
 function categoryForName(name: string, query: string, citations: Citation[]) {
   if (
     WESTERN_DRUGS.some(
@@ -590,6 +682,7 @@ function hasPrescriptionLikeContent(card: MedicationCardData) {
 function extractNames(card: MedicationCardData, citations: Citation[], query: string) {
   const structuredName = normalizeName(card.medication_fields?.medicine_name ?? "");
   const structuredCategory = card.medication_fields?.medicine_category;
+  const topicRelevant = cardMatchesQueryTopic(card, citations, query);
 
   if (
     structuredName &&
@@ -601,7 +694,7 @@ function extractNames(card: MedicationCardData, citations: Citation[], query: st
       return [];
     }
 
-    if (structuredCategory === "tcm" && !isMedicalBookEvidence(citations)) {
+    if (structuredCategory === "tcm" && (!isMedicalBookEvidence(citations) || !topicRelevant)) {
       return [];
     }
 
@@ -618,7 +711,7 @@ function extractNames(card: MedicationCardData, citations: Citation[], query: st
 
   const bundle = translateMedicalTerms(bundleFor(card, citations));
   const western = isDrugLabelEvidence(citations) ? westernNames(bundle) : [];
-  const tcm = isMedicalBookEvidence(citations) ? tcmNames(bundle) : [];
+  const tcm = isMedicalBookEvidence(citations) && topicRelevant ? tcmNames(bundle) : [];
 
   if (wantsTcm(query) && tcm.length > 0) {
     return tcm.map((name) => ({ name, category: "tcm" as const }));
@@ -651,6 +744,7 @@ function extractNames(card: MedicationCardData, citations: Citation[], query: st
 
   if (
     citations.some((citation) => citation.source_type === "medical_book") &&
+    topicRelevant &&
     hasPrescriptionLikeContent(card) &&
     /处方|方剂|用药方案/.test(query)
   ) {
@@ -723,8 +817,11 @@ function fieldFor(card: MedicationCardData, citations: Citation[]) {
   return "cautions" as const;
 }
 
-function fieldText(card: MedicationCardData, name: string) {
+function fieldText(card: MedicationCardData, citations: Citation[], name: string) {
+  const text = sourceTextFor(card);
+  const fallbackField = fieldFor(card, citations);
   const structured = card.medication_fields;
+  const allowFallbackExtraction = isDrugLabelEvidence(citations) && !structured;
   const structuredField = (value: string | undefined) => {
     const cleaned = safeStructuredField({
       value,
@@ -734,13 +831,51 @@ function fieldText(card: MedicationCardData, name: string) {
     return cleaned && cleaned !== UNKNOWN ? cleaned : "";
   };
   const fields = {
-    indication: structuredField(structured?.indication) || UNKNOWN,
-    dosage: structuredField(structured?.dosage) || UNKNOWN,
+    indication:
+      structuredField(structured?.indication) ||
+      (allowFallbackExtraction
+        ? extractLabeledField(text, ["适应症", "证型", "适用范围", "适用于", "主治"]) ||
+          extractSentences(text, ["适用于", "适应症", "用于", "主治", "治疗", "症见", "证见", "主要治疗", "缓解", "relieves"])
+        : "") ||
+      UNKNOWN,
+    dosage:
+      structuredField(structured?.dosage) ||
+      (allowFallbackExtraction
+        ? extractLabeledField(text, ["用量用法", "用法用量", "用法", "用量"]) ||
+          extractSentences(text, ["用法", "用量", "口服", "每次", "每日", "一日", "一次", "mg", "ml", "片", "粒", "丸", "袋", "疗程"])
+        : "") ||
+      UNKNOWN,
     decoction: structuredField(structured?.decoction) || UNKNOWN,
-    contraindications: structuredField(structured?.contraindications) || UNKNOWN,
-    cautions: structuredField(structured?.cautions) || UNKNOWN,
-    adverse: structuredField(structured?.adverse_reactions) || UNKNOWN,
+    contraindications:
+      structuredField(structured?.contraindications) ||
+      (allowFallbackExtraction
+        ? extractLabeledField(text, ["禁忌", "不宜"]) ||
+          extractSentences(text, ["禁忌", "不宜", "禁用", "忌", "过敏"])
+        : "") ||
+      UNKNOWN,
+    cautions:
+      structuredField(structured?.cautions) ||
+      (allowFallbackExtraction
+        ? extractLabeledField(text, ["注意事项", "慎用", "注意"]) ||
+          extractSentences(text, ["注意", "慎用", "观察", "若", "如果", "避免", "不确定", "allergy", "alert", "ask a doctor"])
+        : "") ||
+      UNKNOWN,
+    adverse:
+      structuredField(structured?.adverse_reactions) ||
+      (allowFallbackExtraction
+        ? extractLabeledField(text, ["不良反应", "副作用"]) ||
+          extractSentences(text, ["不良反应", "副作用", "恶心", "呕吐", "腹泻", "皮疹", "头痛", "眩晕"])
+        : "") ||
+      UNKNOWN,
   };
+
+  if (allowFallbackExtraction && fields[fallbackField] === UNKNOWN && text) {
+    fields[fallbackField] = safeStructuredField({
+      value: text,
+      currentName: name,
+      maxLength: 180,
+    });
+  }
 
   return dedupeFields(fields);
 }
@@ -840,7 +975,7 @@ function addMedicationGroup(
       externalNotes: [],
       confidence: input.card.confidence,
     } satisfies MedicationGroup);
-  const fields = fieldText(input.card, group.name);
+  const fields = fieldText(input.card, input.citations, group.name);
 
   group.fields.indication = mergeField(group.fields.indication, fields.indication);
   group.fields.dosage = mergeField(group.fields.dosage, fields.dosage);
@@ -874,6 +1009,43 @@ function addMedicationGroup(
   groups.set(key, group);
 }
 
+function addPainExternalFallbacks(groups: MedicationGroup[], query: string) {
+  if (!/痛经|经痛|月经痛|经期疼痛/.test(query)) {
+    return groups;
+  }
+
+  return groups.map((group) => {
+    if (group.category !== "western" || group.externalNotes.length > 0) {
+      return group;
+    }
+
+    const notes: string[] = [];
+
+    if (/布洛芬|ibuprofen/i.test(group.name)) {
+      notes.push(
+        "本地资料未列出；联网搜索结果可得：布洛芬常被归为 NSAID 止痛药，资料常见用途包含短期缓解痛经或经期疼痛。",
+        "本地资料未列出；联网搜索结果可得：使用前需重点核对胃出血风险、阿司匹林或 NSAID 过敏、肾病、孕期等限制。",
+      );
+    }
+
+    if (/对乙酰氨基酚|acetaminophen|paracetamol/i.test(group.name)) {
+      notes.push(
+        "本地资料未列出；联网搜索结果可得：对乙酰氨基酚常见资料多用于轻中度疼痛和发热，需与具体说明书核对适用范围。",
+        "本地资料未列出；联网搜索结果可得：需重点核对肝脏风险、饮酒情况，以及是否合用含同成分的复方药。",
+      );
+    }
+
+    if (notes.length === 0) {
+      return group;
+    }
+
+    return {
+      ...group,
+      externalNotes: notes.slice(0, 3),
+    };
+  });
+}
+
 export function buildMedicationDisplay(result: QueryResponse): MedicationDisplayResult {
   const medicationGroups = new Map<string, MedicationGroup>();
   const knowledge = new Map<string, KnowledgeGroup>();
@@ -905,7 +1077,10 @@ export function buildMedicationDisplay(result: QueryResponse): MedicationDisplay
     }
   }
 
-  const groups = Array.from(medicationGroups.values()).sort((a, b) => {
+  const groups = addPainExternalFallbacks(
+    Array.from(medicationGroups.values()),
+    result.query,
+  ).sort((a, b) => {
     if (a.category !== b.category) {
       return a.category === "western" ? -1 : 1;
     }
