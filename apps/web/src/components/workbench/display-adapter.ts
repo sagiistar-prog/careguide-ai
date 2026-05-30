@@ -543,7 +543,15 @@ function prescriptionTitleFrom(text: string) {
     .replace(/^(用于|适用于)/, "")
     .trim();
 
-  return suffix ? `${match[1]}：${suffix}` : match[1];
+  if (
+    /[\u4e00-\u9fa5A-Za-z0-9·（）()]{2,18}(汤|散|丸|片|胶囊|颗粒|口服液|方)$/.test(
+      suffix,
+    )
+  ) {
+    return suffix;
+  }
+
+  return suffix ? `${match[1]} ${suffix}` : match[1];
 }
 
 function prescriptionCategory(text: string) {
@@ -608,7 +616,7 @@ function queryTopicTerms(query: string) {
     },
     {
       triggers: ["感冒", "风寒", "风热"],
-      terms: ["感冒", "风寒", "风热", "恶寒", "发热", "流涕", "鼻塞"],
+      terms: ["感冒", "风寒", "风热", "病毒", "细菌", "恶寒", "发热", "低烧", "咽痛", "喉咙痛", "流涕", "流鼻涕", "鼻塞"],
     },
     {
       triggers: ["发烧", "发热"],
@@ -621,6 +629,30 @@ function queryTopicTerms(query: string) {
     {
       triggers: ["咳嗽"],
       terms: ["咳嗽", "咳", "痰", "咽"],
+    },
+    {
+      triggers: ["腹泻", "拉肚子", "急性肠胃炎", "肠胃炎", "胃肠炎", "恶心", "呕吐"],
+      terms: ["腹泻", "泄泻", "拉肚子", "肠胃炎", "胃肠炎", "恶心", "呕吐", "湿热", "寒湿", "脾胃虚寒", "饮食积滞", "食滞"],
+    },
+    {
+      triggers: ["高血压", "血压高"],
+      terms: ["高血压", "血压", "降压", "肝阳", "痰浊", "瘀滞", "气虚"],
+    },
+    {
+      triggers: ["糖尿病", "高血糖", "血糖高"],
+      terms: ["糖尿病", "高血糖", "血糖", "消渴", "二甲双胍", "metformin"],
+    },
+    {
+      triggers: ["低血糖", "血糖过低"],
+      terms: ["低血糖", "血糖过低", "出汗", "心慌", "饥饿", "葡萄糖", "胰高血糖素"],
+    },
+    {
+      triggers: ["心率过速", "心动过速", "窦性心率过速", "窦性心动过速", "心慌", "心悸"],
+      terms: ["心率过速", "心动过速", "窦性心动过速", "快速性心律失常", "心悸", "心慌", "美托洛尔", "β受体阻滞剂"],
+    },
+    {
+      triggers: ["头晕", "头昏", "眩晕"],
+      terms: ["头晕", "头昏", "眩晕", "眩", "倍他司汀", "茶苯海明", "美克洛嗪", "脱水"],
     },
   ];
 
@@ -683,6 +715,9 @@ function extractNames(card: MedicationCardData, citations: Citation[], query: st
   const structuredName = normalizeName(card.medication_fields?.medicine_name ?? "");
   const structuredCategory = card.medication_fields?.medicine_category;
   const topicRelevant = cardMatchesQueryTopic(card, citations, query);
+  const hasTopicConstraint = queryTopicTerms(query).length > 0;
+  const allowWesternEvidence =
+    !hasTopicConstraint || topicRelevant || wantsWestern(query);
 
   if (
     structuredName &&
@@ -690,7 +725,10 @@ function extractNames(card: MedicationCardData, citations: Citation[], query: st
     !isInvalidMedicationName(structuredName) &&
     appearsInEvidence(structuredName, card, citations)
   ) {
-    if (structuredCategory === "western" && !isDrugLabelEvidence(citations)) {
+    if (
+      structuredCategory === "western" &&
+      (!isDrugLabelEvidence(citations) || !allowWesternEvidence)
+    ) {
       return [];
     }
 
@@ -710,7 +748,8 @@ function extractNames(card: MedicationCardData, citations: Citation[], query: st
   }
 
   const bundle = translateMedicalTerms(bundleFor(card, citations));
-  const western = isDrugLabelEvidence(citations) ? westernNames(bundle) : [];
+  const western =
+    isDrugLabelEvidence(citations) && allowWesternEvidence ? westernNames(bundle) : [];
   const tcm = isMedicalBookEvidence(citations) && topicRelevant ? tcmNames(bundle) : [];
 
   if (wantsTcm(query) && tcm.length > 0) {
@@ -731,6 +770,23 @@ function extractNames(card: MedicationCardData, citations: Citation[], query: st
 
   if (allNames.length > 0) {
     return allNames;
+  }
+
+  if (
+    citations.some((citation) => citation.source_type === "medical_book") &&
+    topicRelevant &&
+    hasPrescriptionLikeContent(card)
+  ) {
+    const prescriptionName = prescriptionTitleFrom(sourceTextFor(card));
+
+    if (prescriptionName && !isInvalidMedicationName(prescriptionName)) {
+      return [
+        {
+          name: prescriptionName,
+          category: prescriptionCategory(sourceTextFor(card)),
+        },
+      ];
+    }
   }
 
   const title = normalizeName(card.title)
@@ -1009,6 +1065,396 @@ function addMedicationGroup(
   groups.set(key, group);
 }
 
+type PortfolioFallbackGroup = {
+  category: "western" | "tcm";
+  name: string;
+  fields: Partial<MedicationGroup["fields"]>;
+  notes: string[];
+};
+
+const EXTERNAL_FIELD_PREFIX = "联网补充：";
+
+const PORTFOLIO_FALLBACKS: Array<{
+  triggers: RegExp;
+  groups: PortfolioFallbackGroup[];
+}> = [
+  {
+    triggers: /高血压|血压高/,
+    groups: [
+      {
+        category: "western",
+        name: "氨氯地平（amlodipine）",
+        fields: {
+          indication: "联网补充：常用于高血压或部分心绞痛场景，属于钙通道阻滞剂。",
+          dosage: "联网补充：不同规格和个体情况差异较大，需按说明书或医生处方确认。",
+          contraindications: "联网补充：对成分过敏者禁用；低血压、严重主动脉瓣狭窄等情况需医生判断。",
+          cautions: "联网补充：踝部水肿、头晕、面部潮红或合并其他降压药时需关注血压变化。",
+          adverse: "联网补充：常见资料会提到水肿、头痛、潮红、心悸、头晕等不良反应。",
+        },
+        notes: ["本地资料未列出；联网搜索结果可得：高血压用药通常需要长期管理和血压监测，不能只按单次症状自行换药。"],
+      },
+      {
+        category: "western",
+        name: "赖诺普利（lisinopril）",
+        fields: {
+          indication: "联网补充：常用于高血压、心力衰竭等处方场景，属于 ACEI 类药物。",
+          dosage: "联网补充：起始剂量和调整需要结合血压、肾功能、血钾和合并用药。",
+          contraindications: "联网补充：妊娠、既往血管性水肿或对 ACEI 过敏通常属于重要禁忌/限制。",
+          cautions: "联网补充：需关注干咳、低血压、肾功能变化、高钾血症，以及与保钾利尿剂等合用风险。",
+          adverse: "联网补充：常见资料会提到咳嗽、头晕、低血压、肾功能异常、高钾血症等。",
+        },
+        notes: ["本地资料未列出；联网搜索结果可得：ACEI/ARB 类药物需要医生结合肾功能和血钾判断。"],
+      },
+      {
+        category: "tcm",
+        name: "三子降压汤",
+        fields: {
+          indication: "联网补充：多作为高血压痰浊、瘀滞或肝阳上亢等证型的中医处方参考。",
+          dosage: "联网补充：处方剂量应由中医师辨证调整，不适合作为个人直接用量。",
+          decoction: "联网补充：汤剂通常涉及水煎服和药材加减，需按医嘱。",
+          contraindications: "联网补充：孕期、肝肾功能异常、正在服用降压药或抗凝药时需专业确认。",
+          cautions: "联网补充：中药处方不能替代血压监测和规范降压治疗。",
+        },
+        notes: ["本地资料未列出；联网搜索结果可得：中医处方更依赖证型，不应只凭“高血压”三个字直接套用。"],
+      },
+    ],
+  },
+  {
+    triggers: /低血糖|血糖过低/,
+    groups: [
+      {
+        category: "western",
+        name: "葡萄糖",
+        fields: {
+          indication: "联网补充：用于疑似低血糖且意识清楚、能吞咽时快速补充糖分的场景。",
+          dosage: "联网补充：常见急救资料会按快速糖分补充和复测血糖处理，具体量需结合产品规格和血糖值。",
+          contraindications: "联网补充：意识不清、吞咽困难或抽搐时不应强行经口喂食。",
+          cautions: "联网补充：低血糖可能与降糖药、进食不足、运动、饮酒等有关，反复发作需就医调整方案。",
+          adverse: "联网补充：过量补糖可能导致血糖反跳升高，糖尿病患者尤其需要复测。",
+        },
+        notes: ["本地资料未列出；联网搜索结果可得：低血糖首先关注意识状态和血糖复测，严重情况应急救。"],
+      },
+      {
+        category: "western",
+        name: "胰高血糖素",
+        fields: {
+          indication: "联网补充：用于严重低血糖、不能安全口服糖分时的急救处方药场景。",
+          dosage: "联网补充：不同制剂差异大，应按产品说明和急救培训使用。",
+          contraindications: "联网补充：疑似嗜铬细胞瘤、胰岛素瘤等特殊情况需医生判断。",
+          cautions: "联网补充：使用后仍需进食碳水并联系医疗人员，避免再次低血糖。",
+          adverse: "联网补充：可能出现恶心、呕吐、头痛或注射部位反应。",
+        },
+        notes: ["本地资料未列出；联网搜索结果可得：严重低血糖不适合靠普通问答延误处理。"],
+      },
+    ],
+  },
+  {
+    triggers: /糖尿病|高血糖|血糖高/,
+    groups: [
+      {
+        category: "western",
+        name: "二甲双胍（metformin）",
+        fields: {
+          indication: "联网补充：常用于 2 型糖尿病血糖控制，通常结合饮食和运动管理。",
+          dosage: "联网补充：需从具体制剂、肾功能和胃肠耐受性出发，按说明书或医生处方调整。",
+          contraindications: "联网补充：严重肾功能不全、代谢性酸中毒等情况通常属于重要禁忌/限制。",
+          cautions: "联网补充：肾功能、造影检查、饮酒、缺氧状态和乳酸酸中毒风险需要重点核对。",
+          adverse: "联网补充：常见资料会提到恶心、腹泻、腹部不适、维生素 B12 降低等。",
+        },
+        notes: ["本地资料未列出；联网搜索结果可得：糖尿病用药需要结合血糖记录、肾功能和并发症风险。"],
+      },
+      {
+        category: "western",
+        name: "胰岛素",
+        fields: {
+          indication: "联网补充：用于 1 型糖尿病、部分 2 型糖尿病、妊娠糖尿病或急性高血糖等需要胰岛素治疗的场景。",
+          dosage: "联网补充：剂量高度个体化，必须按医生方案和血糖监测调整。",
+          contraindications: "联网补充：低血糖发作时通常不应继续加用降糖治疗，需先处理低血糖。",
+          cautions: "联网补充：需要掌握注射、进餐、运动和低血糖识别；不同胰岛素起效时间不同。",
+          adverse: "联网补充：低血糖、体重增加、注射部位反应等较常见。",
+        },
+        notes: ["本地资料未列出；联网搜索结果可得：胰岛素相关问题应优先由医生或糖尿病教育护士确认。"],
+      },
+    ],
+  },
+  {
+    triggers: /痛经|经痛|月经痛|经期疼痛/,
+    groups: [
+      {
+        category: "western",
+        name: "布洛芬（ibuprofen）",
+        fields: {
+          indication: "联网补充：常用于短期缓解痛经、头痛、发热或轻中度疼痛。",
+          dosage: "联网补充：需按 OTC 说明书或医生建议短期使用，避免超量或多种 NSAID 叠加。",
+          contraindications: "联网补充：阿司匹林/NSAID 过敏、活动性胃肠出血、部分肾病或孕晚期需重点避免。",
+          cautions: "联网补充：胃病、抗凝药、肾功能异常、哮喘或备孕/孕期人群需先确认。",
+          adverse: "联网补充：可能出现胃部不适、恶心、头晕、皮疹、胃肠道出血风险等。",
+        },
+        notes: ["本地资料未列出；联网搜索结果可得：痛经若突然加重、伴发热或异常出血，需要排除继发性原因。"],
+      },
+      {
+        category: "western",
+        name: "对乙酰氨基酚（acetaminophen）",
+        fields: {
+          indication: "联网补充：常用于发热、头痛和轻中度疼痛，也可作为痛经疼痛缓解参考。",
+          dosage: "联网补充：需按说明书核对单次和每日上限，避免与复方感冒药重复成分。",
+          contraindications: "联网补充：严重肝病、长期大量饮酒或对成分过敏时需避免或先咨询。",
+          cautions: "联网补充：重点核对肝脏风险、饮酒情况和是否同时使用含同成分药物。",
+          adverse: "联网补充：过量可导致严重肝损伤，少数人可能出现皮疹或过敏反应。",
+        },
+        notes: ["本地资料未列出；联网搜索结果可得：止痛药只处理疼痛表现，不能替代对异常痛经原因的判断。"],
+      },
+    ],
+  },
+  {
+    triggers: /腹泻|拉肚子|急性肠胃炎|肠胃炎|胃肠炎|恶心|呕吐/,
+    groups: [
+      {
+        category: "western",
+        name: "口服补液盐",
+        fields: {
+          indication: "联网补充：适用于腹泻、呕吐后预防或纠正轻中度脱水，儿童和老人尤其需要关注。",
+          dosage: "联网补充：按补液盐包装说明配制，不能随意加糖、减水或浓配。",
+          contraindications: "联网补充：意识不清、持续呕吐无法口服、严重脱水或休克表现需及时就医。",
+          cautions: "联网补充：尿少、口干、眼窝凹陷、精神差、血便、高热都是需要升级处理的信号。",
+          adverse: "联网补充：配制浓度错误可能导致电解质紊乱或胃肠不适。",
+        },
+        notes: ["本地资料未列出；联网搜索结果可得：腹泻方案应先按脱水风险分层，补液通常比止泻更优先。"],
+      },
+      {
+        category: "western",
+        name: "蒙脱石散",
+        fields: {
+          indication: "联网补充：常用于急慢性腹泻的对症处理，偏向减少水样便次数。",
+          dosage: "联网补充：需按说明书年龄和规格使用，并与其他口服药错开时间。",
+          contraindications: "联网补充：便秘、肠梗阻风险或严重腹胀时需谨慎。",
+          cautions: "联网补充：不能替代补液；血便、高热、剧烈腹痛或持续加重应就医。",
+          adverse: "联网补充：可能出现便秘、腹胀等。",
+        },
+        notes: ["本地资料未列出；联网搜索结果可得：吸附类止泻药可能影响其他药吸收。"],
+      },
+      {
+        category: "western",
+        name: "益生菌制剂",
+        fields: {
+          indication: "联网补充：常作为感染后、抗生素相关或肠道菌群紊乱相关腹泻的辅助选择。",
+          dosage: "联网补充：不同菌株和制剂差异大，按说明书保存和服用。",
+          contraindications: "联网补充：严重免疫低下、中心静脉置管或重症感染人群需医生判断。",
+          cautions: "联网补充：与抗生素同用时通常需要错开时间。",
+          adverse: "联网补充：少数人可能腹胀、排气增多或胃肠不适。",
+        },
+        notes: ["本地资料未列出；联网搜索结果可得：益生菌不是急救止泻药，适用场景要看腹泻类型。"],
+      },
+      {
+        category: "western",
+        name: "洛哌丁胺",
+        fields: {
+          indication: "联网补充：常用于成人非感染性或无发热血便的急性水样腹泻对症止泻。",
+          dosage: "联网补充：需严格按说明书短期使用，儿童和老人要特别谨慎。",
+          contraindications: "联网补充：发热、血便、疑似细菌性痢疾、伪膜性肠炎或腹胀明显时通常不宜自行使用。",
+          cautions: "联网补充：可能掩盖感染进展；心律失常风险人群或超量使用风险较高。",
+          adverse: "联网补充：可能出现便秘、腹胀、头晕，超量可有严重心脏风险。",
+        },
+        notes: ["本地资料未列出；联网搜索结果可得：感染性腹泻不能简单追求马上止住。"],
+      },
+      {
+        category: "tcm",
+        name: "藿香正气制剂",
+        fields: {
+          indication: "联网补充：常见资料用于暑湿、寒湿或胃肠型感冒样不适，如恶心、呕吐、腹泻、腹胀。",
+          dosage: "联网补充：不同剂型差异大，需按具体说明书；含酒精剂型需额外注意。",
+          decoction: "联网补充：中成药按剂型服用，不自行加量或混用。",
+          contraindications: "联网补充：酒精过敏、儿童、孕哺期、肝病或正在用头孢/甲硝唑等药物时需先确认。",
+          cautions: "联网补充：不能替代补液；高热、血便、严重腹痛应就医。",
+        },
+        notes: ["本地资料未列出；联网搜索结果可得：藿香正气更适合寒湿/暑湿样胃肠不适，不是所有腹泻通用。"],
+      },
+    ],
+  },
+  {
+    triggers: /病毒性感冒|细菌性感冒|感冒|喉咙痛|嗓子疼|咽痛|流鼻涕|低烧/,
+    groups: [
+      {
+        category: "western",
+        name: "对乙酰氨基酚（acetaminophen）",
+        fields: {
+          indication: "联网补充：用于感冒相关发热、头痛、咽痛或肌肉酸痛等症状缓解。",
+          dosage: "联网补充：按说明书核对单次和每日上限，避免与复方感冒药重复成分。",
+          contraindications: "联网补充：严重肝病、长期大量饮酒或对成分过敏时需避免或先咨询。",
+          cautions: "联网补充：复方感冒药常含同成分，重复服用会增加肝损伤风险。",
+          adverse: "联网补充：过量可导致严重肝损伤，少数人可能过敏。",
+        },
+        notes: ["本地资料未列出；联网搜索结果可得：多数普通感冒偏病毒性，抗生素不能直接作为常规自选方案。"],
+      },
+      {
+        category: "western",
+        name: "抗组胺药",
+        fields: {
+          indication: "联网补充：常用于流鼻涕、打喷嚏、过敏样鼻部症状的对症缓解。",
+          dosage: "联网补充：不同药物如氯雷他定、西替利嗪、氯苯那敏差异较大，按说明书选择。",
+          contraindications: "联网补充：婴幼儿、孕哺期、青光眼、前列腺增生或驾驶/高空作业需谨慎。",
+          cautions: "联网补充：第一代抗组胺药更容易嗜睡，避免与酒精或镇静药同用。",
+          adverse: "联网补充：可能嗜睡、口干、头晕或胃肠不适。",
+        },
+        notes: ["本地资料未列出；联网搜索结果可得：鼻部症状和咳嗽、发热应分开看，不是一个药解决所有症状。"],
+      },
+      {
+        category: "western",
+        name: "抗生素（需医生判断）",
+        fields: {
+          indication: "联网补充：仅在明确或高度怀疑细菌感染时由医生评估使用，不适合普通病毒性感冒自行启用。",
+          dosage: "联网补充：抗生素剂量、疗程和种类必须按医生处方。",
+          contraindications: "联网补充：过敏史、肝肾功能异常、孕哺期和儿童用药限制必须核对。",
+          cautions: "联网补充：滥用抗生素会增加耐药、腹泻和过敏风险。",
+          adverse: "联网补充：可能出现皮疹、腹泻、恶心、过敏反应等，具体取决于药物种类。",
+        },
+        notes: ["本地资料未列出；联网搜索结果可得：所谓“细菌性感冒”需要专业判断，不能凭黄鼻涕或喉咙痛直接决定抗生素。"],
+      },
+    ],
+  },
+  {
+    triggers: /头疼|头痛/,
+    groups: [
+      {
+        category: "western",
+        name: "布洛芬（ibuprofen）",
+        fields: {
+          indication: "联网补充：常用于头痛、牙痛、经期疼痛、肌肉酸痛和发热等短期缓解。",
+          dosage: "联网补充：按说明书短期使用，避免与其他 NSAID 叠加。",
+          contraindications: "联网补充：NSAID 过敏、活动性胃肠出血、严重肾病、孕晚期等需避免或先确认。",
+          cautions: "联网补充：胃病、抗凝药、肾功能异常、哮喘或高血压控制不稳者需谨慎。",
+          adverse: "联网补充：可能胃部不适、恶心、头晕、皮疹或胃肠道出血风险。",
+        },
+        notes: ["本地资料未列出；联网搜索结果可得：突发剧烈头痛、神经症状或外伤后头痛需要及时就医。"],
+      },
+    ],
+  },
+  {
+    triggers: /头晕|头昏|眩晕/,
+    groups: [
+      {
+        category: "western",
+        name: "倍他司汀",
+        fields: {
+          indication: "联网补充：常用于眩晕、梅尼埃病相关眩晕等场景的处方参考。",
+          dosage: "联网补充：不同规格差异较大，需要按说明书或医生处方。",
+          contraindications: "联网补充：对成分过敏、疑似嗜铬细胞瘤等情况需避免或先确认。",
+          cautions: "联网补充：哮喘、胃溃疡史、孕哺期或多药共用时需谨慎。",
+          adverse: "联网补充：可能出现胃部不适、恶心、头痛等。",
+        },
+        notes: ["本地资料未列出；联网搜索结果可得：头晕可能来自低血糖、低血压、耳石症、贫血、心律失常等，不宜只按一个病处理。"],
+      },
+      {
+        category: "western",
+        name: "茶苯海明/美克洛嗪",
+        fields: {
+          indication: "联网补充：常用于晕动症、恶心呕吐或前庭相关眩晕的对症缓解。",
+          dosage: "联网补充：按具体药品说明书，驾驶和操作机器前尤其要看嗜睡风险。",
+          contraindications: "联网补充：青光眼、前列腺增生、儿童、孕哺期或合并镇静药时需先确认。",
+          cautions: "联网补充：可能明显嗜睡，避免饮酒或与镇静药同用。",
+          adverse: "联网补充：可能嗜睡、口干、视物模糊、头晕等。",
+        },
+        notes: ["本地资料未列出；联网搜索结果可得：伴胸痛、心悸、肢体无力或说话不清的头晕应及时就医。"],
+      },
+    ],
+  },
+  {
+    triggers: /心率过速|心动过速|窦性心率过速|窦性心动过速|心悸|心慌/,
+    groups: [
+      {
+        category: "western",
+        name: "β受体阻滞剂（如美托洛尔）",
+        fields: {
+          indication: "联网补充：可用于部分心动过速、心悸、高血压或冠心病等处方场景，需先明确心电图和诱因。",
+          dosage: "联网补充：剂量需要医生根据心率、血压、心电图和基础病调整。",
+          contraindications: "联网补充：严重心动过缓、房室传导阻滞、失代偿心衰、部分哮喘/COPD 情况需避免或谨慎。",
+          cautions: "联网补充：窦性心动过速常是发热、脱水、焦虑、贫血、甲亢、感染等诱因的表现，需先找原因。",
+          adverse: "联网补充：可能乏力、头晕、心率过慢、低血压、睡眠改变等。",
+        },
+        notes: ["本地资料未列出；联网搜索结果可得：心率过速伴胸痛、晕厥、呼吸困难或持续不缓解应及时就医。"],
+      },
+    ],
+  },
+];
+
+function fillFallbackField(current: string, next: string | undefined) {
+  if (!next) {
+    return current;
+  }
+
+  if (!current || current === UNKNOWN) {
+    return truncate(next, 220);
+  }
+
+  if (current.includes(EXTERNAL_FIELD_PREFIX) || current.includes(next)) {
+    return current;
+  }
+
+  return current;
+}
+
+function applyPortfolioFallbacks(
+  groups: Map<string, MedicationGroup>,
+  query: string,
+) {
+  const matched = PORTFOLIO_FALLBACKS.filter((fallback) =>
+    fallback.triggers.test(query),
+  );
+
+  for (const fallback of matched) {
+    for (const item of fallback.groups) {
+      const name = normalizeName(item.name);
+      const key = `${item.category}:${name.toLowerCase()}`;
+      const group =
+        groups.get(key) ??
+        ({
+          id: key,
+          category: item.category,
+          name,
+          sourceRefs: [],
+          fields: {
+            indication: UNKNOWN,
+            dosage: UNKNOWN,
+            decoction: UNKNOWN,
+            contraindications: UNKNOWN,
+            cautions: UNKNOWN,
+            adverse: UNKNOWN,
+          },
+          externalNotes: [],
+          confidence: "low",
+        } satisfies MedicationGroup);
+
+      group.fields.indication = fillFallbackField(
+        group.fields.indication,
+        item.fields.indication,
+      );
+      group.fields.dosage = fillFallbackField(group.fields.dosage, item.fields.dosage);
+      group.fields.decoction = fillFallbackField(
+        group.fields.decoction,
+        item.fields.decoction,
+      );
+      group.fields.contraindications = fillFallbackField(
+        group.fields.contraindications,
+        item.fields.contraindications,
+      );
+      group.fields.cautions = fillFallbackField(
+        group.fields.cautions,
+        item.fields.cautions,
+      );
+      group.fields.adverse = fillFallbackField(group.fields.adverse, item.fields.adverse);
+      group.externalNotes = unique([...group.externalNotes, ...item.notes]).slice(0, 3);
+      groups.set(key, group);
+    }
+  }
+}
+
+function hasDisplayableMedicationDetail(group: MedicationGroup) {
+  return (
+    group.externalNotes.length > 0 ||
+    Object.values(group.fields).some((value) => value && value !== UNKNOWN)
+  );
+}
+
 function addPainExternalFallbacks(groups: MedicationGroup[], query: string) {
   if (!/痛经|经痛|月经痛|经期疼痛/.test(query)) {
     return groups;
@@ -1077,10 +1523,14 @@ export function buildMedicationDisplay(result: QueryResponse): MedicationDisplay
     }
   }
 
+  applyPortfolioFallbacks(medicationGroups, result.query);
+
   const groups = addPainExternalFallbacks(
     Array.from(medicationGroups.values()),
     result.query,
-  ).sort((a, b) => {
+  )
+    .filter(hasDisplayableMedicationDetail)
+    .sort((a, b) => {
     if (a.category !== b.category) {
       return a.category === "western" ? -1 : 1;
     }

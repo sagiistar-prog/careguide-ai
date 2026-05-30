@@ -10,6 +10,7 @@ import { getServerEnv } from "../../../lib/env";
 import { hybridSearch } from "../../../lib/retrieval/hybrid-search";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 export async function POST(request: Request) {
   const requestId = randomUUID();

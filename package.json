@@ -22,6 +22,7 @@
     "answer:test": "npm --workspace apps/web run answer:test",
     "verify:answer": "npm --workspace apps/web run verify:answer",
     "api:test": "npm --workspace apps/web run api:test",
+    "prod:smoke": "npm --workspace apps/web run prod:smoke",
     "ui:smoke": "npm --workspace apps/web run ui:smoke",
     "books:scan": "npm --workspace apps/web run books:scan",
     "books:sample": "npm --workspace apps/web run books:sample",

@@ -34,18 +34,33 @@ const RISK_RULES = [
 
 const SYMPTOM_RULES = [
   "感冒",
+  "病毒性感冒",
+  "细菌性感冒",
+  "低烧",
   "发烧",
   "发热",
   "咳嗽",
   "咽痛",
+  "喉咙痛",
+  "嗓子疼",
+  "流鼻涕",
   "腹痛",
   "肚子痛",
   "胃痛",
+  "恶心",
+  "呕吐",
+  "拉肚子",
   "腹泻",
+  "急性肠胃炎",
+  "肠胃炎",
+  "胃肠炎",
   "便秘",
   "中暑",
   "头痛",
   "头疼",
+  "头晕",
+  "头昏",
+  "眩晕",
   "疼痛",
   "止痛",
   "痛经",
@@ -53,6 +68,14 @@ const SYMPTOM_RULES = [
   "月经痛",
   "经期疼痛",
   "失眠",
+  "心慌",
+  "心悸",
+  "心率过速",
+  "心动过速",
+  "窦性心率过速",
+  "窦性心动过速",
+  "低血糖",
+  "高血糖",
   "鼻炎",
   "过敏",
 ] as const;
@@ -84,6 +107,8 @@ const WESTERN_PREFERENCE_TERMS = [
 
 const FIND_MEDICINE_TERMS = [
   "吃什么",
+  "该吃什么",
+  "应该吃什么",
   "吃点什么",
   "用什么",
   "有哪些药",
@@ -97,6 +122,22 @@ const FIND_MEDICINE_TERMS = [
   "用药方案",
   "怎么办",
   "怎么处理",
+  "高血压",
+  "低血糖",
+  "糖尿病",
+  "急性肠胃炎",
+  "肠胃炎",
+  "胃肠炎",
+  "腹泻",
+  "拉肚子",
+  "痛经",
+  "头痛",
+  "头疼",
+  "头晕",
+  "心率过速",
+  "心动过速",
+  "窦性心率过速",
+  "窦性心动过速",
 ] as const;
 
 function detectLanguage(query: string): NormalizedQuery["language"] {
@@ -190,6 +231,10 @@ function detectQuestionType(
   query: string,
   riskTerms: string[],
 ): NormalizedQuery["question_type"] {
+  if (includesAny(query, ["是什么", "怎么理解", "分类", "证型", "症状说明"])) {
+    return "disease_knowledge";
+  }
+
   if (includesAny(query, FIND_MEDICINE_TERMS)) {
     return "find_medicine";
   }
@@ -214,10 +259,6 @@ function detectQuestionType(
     return "prescription";
   }
 
-  if (includesAny(query, ["是什么", "怎么理解", "分类", "证型", "症状说明"])) {
-    return "disease_knowledge";
-  }
-
   return "general";
 }
 
@@ -228,7 +269,21 @@ function detectSymptoms(query: string) {
 function ruleScenarioMatches(query: string): EntityMatch[] {
   const matches: EntityMatch[] = [];
 
-  if (["感冒", "发热", "发烧", "退热"].some((term) => query.includes(term))) {
+  if (
+    [
+      "感冒",
+      "病毒性感冒",
+      "细菌性感冒",
+      "发热",
+      "发烧",
+      "低烧",
+      "退热",
+      "喉咙痛",
+      "嗓子疼",
+      "咽痛",
+      "流鼻涕",
+    ].some((term) => query.includes(term))
+  ) {
     matches.push({
       id: "cold_fever",
       entity_type: "scenario",
@@ -265,7 +320,7 @@ function ruleScenarioMatches(query: string): EntityMatch[] {
     });
   }
 
-  if (["糖尿病", "血糖"].some((term) => query.includes(term))) {
+  if (["糖尿病", "高血糖", "血糖高", "二型糖尿病", "2型糖尿病"].some((term) => query.includes(term))) {
     matches.push({
       id: "diabetes",
       entity_type: "scenario",

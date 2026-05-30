@@ -1,0 +1,30 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "CareGuide AI",
+  "version": "0.1.0",
+  "identifier": "ai.careguide.desktop",
+  "build": {
+    "frontendDist": "../dist",
+    "beforeDevCommand": "",
+    "beforeBuildCommand": ""
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "CareGuide AI",
+        "width": 1280,
+        "height": 860,
+        "resizable": true,
+        "url": "https://careguide-ai.vercel.app"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": []
+  }
+}

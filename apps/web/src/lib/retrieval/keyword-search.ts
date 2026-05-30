@@ -145,17 +145,61 @@ function buildMedicineCandidatePatterns(query: NormalizedQuery) {
     symptomSpecific.push("布洛芬", "对乙酰氨基酚", "月经痛", "痛经", "经期疼痛");
   }
 
-  if (query.detected_symptoms.some((term) => ["胃痛", "腹痛", "肚子痛"].includes(term))) {
-    symptomSpecific.push("保和丸", "大山楂丸", "附子理中丸", "黄连上清丸");
+  if (
+    query.detected_symptoms.some((term) =>
+      ["胃痛", "腹痛", "肚子痛", "腹泻", "拉肚子", "急性肠胃炎", "肠胃炎", "胃肠炎", "恶心", "呕吐"].includes(term),
+    )
+  ) {
+    symptomSpecific.push(
+      "口服补液盐",
+      "蒙脱石散",
+      "益生菌",
+      "洛哌丁胺",
+      "黄连素",
+      "藿香正气水",
+      "藿香正气胶囊",
+      "保和丸",
+      "大山楂丸",
+      "附子理中丸",
+      "黄连上清丸",
+    );
   }
 
   if (query.detected_symptoms.includes("中暑")) {
     symptomSpecific.push("藿香正气水", "藿香正气胶囊");
   }
 
+  if (query.detected_symptoms.some((term) => ["头晕", "头昏", "眩晕"].includes(term))) {
+    symptomSpecific.push("倍他司汀", "茶苯海明", "美克洛嗪", "小柴胡颗粒");
+  }
+
+  if (
+    query.detected_symptoms.some((term) =>
+      ["心率过速", "心动过速", "窦性心率过速", "窦性心动过速", "心悸", "心慌"].includes(term),
+    )
+  ) {
+    symptomSpecific.push("美托洛尔", "比索洛尔", "普萘洛尔", "稳心颗粒");
+  }
+
+  if (query.search_terms.some((term) => ["高血压", "血压高"].includes(term))) {
+    symptomSpecific.push("降压", "三子降压汤", "天麻钩藤饮", "氨氯地平", "赖诺普利");
+  }
+
+  if (query.search_terms.some((term) => ["糖尿病", "高血糖", "血糖高"].includes(term))) {
+    symptomSpecific.push("二甲双胍", "metformin", "胰岛素", "消渴");
+  }
+
+  if (query.search_terms.some((term) => ["低血糖", "血糖过低"].includes(term))) {
+    symptomSpecific.push("葡萄糖", "胰高血糖素", "糖");
+  }
+
+  const broadCatalog =
+    query.medication_preference === "tcm"
+      ? [...KNOWN_MEDICINE_CANDIDATE_TERMS, ...MEDICINE_FORM_TERMS]
+      : [];
+
   return toLikePatterns([
-    ...KNOWN_MEDICINE_CANDIDATE_TERMS,
-    ...MEDICINE_FORM_TERMS,
+    ...broadCatalog,
     ...symptomSpecific,
   ]);
 }
@@ -309,6 +353,12 @@ export async function keywordSearch(input: {
               ) then 0.32 else 0
             end
           ) as keyword_score,
+          array(
+            select regexp_replace(p.pattern, '%', '', 'g')
+            from unnest(${chineseBookPatterns}::text[]) as p(pattern)
+            where sc.original_text ilike p.pattern escape E'\\\\'
+              or sc.section_title ilike p.pattern escape E'\\\\'
+          ) ||
           array(
             select regexp_replace(p.pattern, '%', '', 'g')
             from unnest(${medicineCandidatePatterns}::text[]) as p(pattern)

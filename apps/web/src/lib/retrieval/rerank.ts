@@ -54,6 +54,7 @@ function candidateText(candidate: HybridCandidate) {
     ...candidate.medicine_names,
     ...candidate.ingredient_names,
     ...candidate.scenario_tags,
+    ...candidate.matched_terms,
     ...(candidate.content_signals ?? []),
   ]
     .join(" ")
@@ -99,6 +100,28 @@ function wantsWesternPainRelief(query: NormalizedQuery) {
 
 function wantsMedicationCard(query: NormalizedQuery) {
   return ["find_medicine", "dosage", "prescription"].includes(query.question_type);
+}
+
+function primaryTopicTerms(query: NormalizedQuery) {
+  return [
+    ...query.detected_symptoms,
+    ...query.book_query_terms.common_disease_terms,
+    ...query.detected_scenario.flatMap((scenario) => [
+      scenario.canonical_name,
+      scenario.display_name,
+      scenario.matched_value,
+    ]),
+  ].filter((term) => term.length >= 2);
+}
+
+function matchesPrimaryTopic(candidate: HybridCandidate, query: NormalizedQuery) {
+  const terms = primaryTopicTerms(query);
+
+  if (terms.length === 0) {
+    return true;
+  }
+
+  return includesAny(candidateText(candidate), terms);
 }
 
 function looksLikeMedicationCandidate(candidate: HybridCandidate) {
@@ -295,6 +318,21 @@ export function rerankEvidence(input: {
     ) {
       score += 0.04;
       why.push("candidate_matches_expanded_book_terms");
+    }
+
+    if (input.query.book_intent && matchesPrimaryTopic(candidate, input.query)) {
+      score += 0.1;
+      why.push("candidate_matches_primary_topic");
+    }
+
+    if (
+      input.query.book_intent &&
+      primaryTopicTerms(input.query).length > 0 &&
+      !matchesPrimaryTopic(candidate, input.query) &&
+      candidate.source_type === "medical_book"
+    ) {
+      score -= 0.12;
+      why.push("medical_book_primary_topic_penalty");
     }
 
     if (

@@ -19,6 +19,7 @@
     "answer:test": "tsx src/scripts/answer/test-generate-answer.ts",
     "verify:answer": "tsx src/scripts/answer/verify-answer-safety.ts",
     "api:test": "tsx src/scripts/api/test-api-routes.ts",
+    "prod:smoke": "tsx src/scripts/api/prod-smoke.ts",
     "ui:smoke": "tsx src/scripts/ui/smoke-workbench.ts",
     "books:scan": "tsx src/scripts/books/scan-local-books.ts",
     "books:sample": "tsx src/scripts/books/sample-book-pages.ts",
