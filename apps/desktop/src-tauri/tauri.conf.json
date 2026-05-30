@@ -11,11 +11,12 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "CareGuide AI",
         "width": 1280,
         "height": 860,
         "resizable": true,
-        "url": "https://careguide-ai.vercel.app"
+        "url": "https://careguide-ai-three.vercel.app"
       }
     ],
     "security": {

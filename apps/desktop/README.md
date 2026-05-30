@@ -7,10 +7,10 @@ This is a minimal Tauri shell plan for a Windows EXE portfolio demo. It does not
 Set the online app URL before running or building:
 
 ```powershell
-$env:CAREGUIDE_APP_URL="https://your-vercel-project.vercel.app"
+$env:CAREGUIDE_APP_URL="https://careguide-ai-three.vercel.app"
 ```
 
-If `CAREGUIDE_APP_URL` is not set, the shell falls back to `https://careguide-ai.vercel.app`.
+If `CAREGUIDE_APP_URL` is not set, the shell falls back to `https://careguide-ai-three.vercel.app`.
 
 ## Notes
 
@@ -21,4 +21,12 @@ If `CAREGUIDE_APP_URL` is not set, the shell falls back to `https://careguide-ai
 
 ## Future Build
 
-Install Rust and Tauri prerequisites, then add the Tauri CLI workflow when you are ready to package the EXE.
+Rustup is required for packaging. From the repository root:
+
+```powershell
+npm install
+$env:CAREGUIDE_APP_URL="https://careguide-ai-three.vercel.app"
+npm --workspace apps/desktop run build
+```
+
+The generated Windows installer is written under `apps/desktop/src-tauri/target/release/bundle/nsis/` when the local Windows build prerequisites are present.

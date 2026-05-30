@@ -1,0 +1,15 @@
+[package]
+name = "careguide-ai-desktop"
+version = "0.1.0"
+description = "CareGuide AI desktop shell"
+authors = ["CareGuide AI"]
+license = ""
+repository = ""
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }

@@ -74,3 +74,5 @@ apps/web/.book-ingestion/
 # Local agent and backup files
 .agents/
 *.bak
+.vercel
+apps/**/src-tauri/target/
